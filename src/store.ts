@@ -15,6 +15,7 @@ export type SpeechQuant = "q4_k" | "q8_0" | "f16";
 export type GroupResponseLength = "short" | "normal" | "detailed";
 export type ChatAppearance = "default" | "glass" | "bubbles";
 export type NavbarVisibility = "always" | "hover" | "hidden";
+export type ViewMode = "default" | "overlay" | "fullscreen";
 
 export type GroupSettings = {
   rules: string;
@@ -54,6 +55,7 @@ export type AppSettings = {
   chatWidth: number;
   chatAppearance: ChatAppearance;
   navbarVisibility: NavbarVisibility;
+  viewMode: ViewMode;
   launchAtLogin: boolean;
   startWithChat: boolean;
   startWithModel: boolean;
@@ -250,6 +252,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatWidth: 324,
   chatAppearance: "default",
   navbarVisibility: "always",
+  viewMode: "default",
   launchAtLogin: false,
   startWithChat: false,
   startWithModel: false,

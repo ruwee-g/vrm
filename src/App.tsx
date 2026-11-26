@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Settings from "./Settings";
@@ -64,6 +64,7 @@ import {
   writeCharacterBackgrounds,
   writeCharacters,
   writeLayoutSettings,
+  writeSettings,
   writeViewTransform,
   DEFAULT_VIEW_TRANSFORM,
   type AppSettings,
@@ -74,6 +75,7 @@ import {
   type ChatSummary,
   type ModelMode,
   type ModelStatus,
+  type ViewMode,
   type ViewTransform,
 } from "./store";
 
@@ -88,6 +90,7 @@ const BUTTONS = [
   { id: "reactions", icon: "/icons/nav/reactions.svg?v=1", label: "Эмоции" },
   { id: "mic", icon: "/icons/nav/mic.svg?v=3", label: "Микрофон" },
   { id: "view", icon: "/icons/nav/view.svg?v=3", label: "Редактировать вид" },
+  { id: "display", icon: "/icons/nav/view-mode.svg?v=1", label: "Режим отображения" },
   { id: "user", icon: "/icons/nav/user.svg?v=3", label: "Персонажи" },
   { id: "outfit", icon: "/icons/nav/arrows.svg?v=1", label: "Одежда" },
   { id: "settings", icon: "/icons/nav/settings.svg?v=3", label: "Настройки" },
@@ -111,13 +114,14 @@ const SUMMARY_NEW_MESSAGES = 24;
 const SUMMARY_SOURCE_MAX = 60;
 const CROP_W = 243;
 const CROP_H = 432;
-const NAV_A_IDS = ["screen", "bg", "outfit", "view"];
+const NAV_A_IDS = ["screen", "bg", "outfit", "view", "display"];
 const NAV_B_IDS = [
   "chat",
   "group",
   "bg",
   "outfit",
   "view",
+  "display",
   "reactions",
   "mic",
   "user",
@@ -217,6 +221,8 @@ function MainApp() {
   const backgroundMigrationRef = useRef(false);
   const charactersRef = useRef<Character[]>([]);
   const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
+  const viewModeRef = useRef<ViewMode>(DEFAULT_SETTINGS.viewMode);
+  const changeViewModeRef = useRef<(mode: ViewMode) => void>(() => {});
   const modelModeRef = useRef<ModelMode>(DEFAULT_SETTINGS.modelMode);
   const apiDisabledRef = useRef(false);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -258,6 +264,7 @@ function MainApp() {
   const [chatAppearance, setChatAppearance] = useState(DEFAULT_SETTINGS.chatAppearance);
   const [navbarVisibility, setNavbarVisibility] = useState(DEFAULT_SETTINGS.navbarVisibility);
   const [navbarTemporarilyShown, setNavbarTemporarilyShown] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_SETTINGS.viewMode);
   const [localVision, setLocalVision] = useState(DEFAULT_SETTINGS.localVision);
   const [apiVision, setApiVision] = useState(DEFAULT_SETTINGS.apiVision);
   const [chatImageUrls, setChatImageUrls] = useState<Record<string, string>>({});
@@ -908,6 +915,9 @@ function MainApp() {
         setChatWidth(nextChatWidth);
         setChatAppearance(nextSettings.chatAppearance ?? "default");
         setNavbarVisibility(nextSettings.navbarVisibility ?? "always");
+        const nextViewMode = nextSettings.viewMode ?? "default";
+        viewModeRef.current = nextViewMode;
+        setViewMode(nextViewMode);
         setLocalVision(nextSettings.localVision ?? false);
         setApiVision(nextSettings.apiVision ?? false);
 
@@ -1025,6 +1035,61 @@ function MainApp() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  const changeViewMode = (mode: ViewMode) => {
+    if (viewModeRef.current === mode) return;
+    viewModeRef.current = mode;
+    setViewMode(mode);
+    const next = { ...settingsRef.current, viewMode: mode };
+    settingsRef.current = next;
+    void writeSettings(next).catch((error) =>
+      console.error("Не удалось сохранить режим отображения", error),
+    );
+  };
+  changeViewModeRef.current = changeViewMode;
+
+  useEffect(() => {
+    let win: ReturnType<typeof getCurrentWindow> | null = null;
+    try {
+      win = getCurrentWindow();
+    } catch {
+      return;
+    }
+    void win.setFullscreen(viewMode === "fullscreen").catch((error) =>
+      console.error("Не удалось переключить полноэкранный режим", error),
+    );
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "fullscreen") return;
+    const timer = window.setInterval(() => {
+      void getCurrentWindow()
+        .isFullscreen()
+        .then((active) => {
+          if (!active) changeViewModeRef.current("default");
+        })
+        .catch(() => {});
+    }, 700);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      changeViewModeRef.current("default");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [viewMode]);
+
   useEffect(() => {
     if (modelLoading) return;
     const sync = () => {
@@ -1042,6 +1107,7 @@ function MainApp() {
 
   useEffect(() => {
     windowHeightRef.current = windowHeight;
+    if (viewMode === "fullscreen") return;
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     try {
       win = getCurrentWindow();
@@ -1052,7 +1118,7 @@ function MainApp() {
       const width = windowWidthRef.current || DEFAULT_WINDOW_WIDTH;
       void win.setSize(new LogicalSize(width, windowHeight)).catch(() => {});
     }
-  }, [windowHeight]);
+  }, [windowHeight, viewMode]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1066,6 +1132,7 @@ function MainApp() {
     }
 
     const applySize = (width: number) => {
+      if (viewModeRef.current === "fullscreen") return;
       const next = Math.max(1, Math.ceil(width));
       windowWidthRef.current = next;
       if (win) {
@@ -1107,6 +1174,9 @@ function MainApp() {
   const targetModelId = activeCharacter?.modelId ?? DEFAULT_MODEL_ID;
   const partnerModelId = groupPartner?.modelId ?? DEFAULT_MODEL_ID;
   const apiMode = modelMode === "api";
+  const isFullscreen = viewMode === "fullscreen";
+  const immersive = viewMode === "fullscreen" || viewMode === "overlay";
+  const stageTransparent = viewMode === "overlay";
   const visionEnabled = apiMode ? apiVision : localVision;
   const apiReady = apiMode && apiConfigured && !apiDisabled;
   const llmLoaded = apiMode ? apiReady : modelState.status === "loaded";
@@ -1937,6 +2007,7 @@ function MainApp() {
     const micStarting = b.id === "mic" && micPhase === "starting";
     const micError = b.id === "mic" && micPhase === "error";
     const viewActive = b.id === "view" && (isB ? partnerEditView : editView);
+    const displayActive = b.id === "display" && viewMode !== "default";
     const powerActive = b.id === "power" && llmLoaded;
     const powerYellow = b.id === "power" && modelOnly && !llmLoaded;
     const panelActive =
@@ -1946,7 +2017,7 @@ function MainApp() {
       (b.id === "reactions" && reactionsOpen) ||
       (b.id === "user" && charactersOpen) ||
       (b.id === "group" && groupPanelOpen);
-    const tone = micActive || viewActive || powerActive
+    const tone = micActive || viewActive || powerActive || displayActive
       ? "bg-emerald-400/60 text-emerald-950 hover:bg-emerald-400/75"
       : powerYellow || micStarting
         ? "bg-amber-300/60 text-amber-950 hover:bg-amber-300/75"
@@ -1986,7 +2057,9 @@ function MainApp() {
                 ? isB ? outfitBOpen : outfitOpen
                 : b.id === "view"
                   ? isB ? partnerEditView : editView
-                  : b.id === "group"
+                  : b.id === "display"
+                    ? viewMode !== "default"
+                    : b.id === "group"
                     ? groupPanelOpen
                     : b.id === "reactions"
                       ? reactionsOpen
@@ -2014,6 +2087,10 @@ function MainApp() {
             const setEdit = isB ? setPartnerEditView : setEditView;
             closePanels();
             setEdit((value) => !value);
+          } else if (b.id === "display") {
+            changeViewMode(
+              viewMode === "default" ? "overlay" : viewMode === "overlay" ? "fullscreen" : "default",
+            );
           } else if (b.id === "reactions") {
             closePanels();
             setReactionsOpen((value) => !value);
@@ -2037,7 +2114,7 @@ function MainApp() {
           src={b.icon}
           alt=""
           draggable={false}
-          className={`h-5 w-5 object-contain transition-opacity duration-200 ${micActive || micStarting || micError || viewActive || powerActive || powerYellow ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}
+          className={`h-5 w-5 object-contain transition-opacity duration-200 ${micActive || micStarting || micError || viewActive || displayActive || powerActive || powerYellow ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}
         />
         {b.id === "settings" && updateInfo && (
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white/70" />
@@ -2444,59 +2521,91 @@ function MainApp() {
     </div>
   );
 
-  return (
+  const windowResizeHandle = (
     <div
-      ref={rootRef}
-      onPointerMove={handlePointerActivity}
-      onPointerLeave={handlePointerLeave}
-      className="flex h-screen w-max items-start justify-start bg-transparent pb-[7vh] pl-[31px] pr-[31px] pt-[5vh]"
+      role="separator"
+      aria-label="Изменить высоту окна"
+      title="Изменить высоту окна"
+      onPointerDown={(event) => beginResize("window", event)}
+      onPointerMove={moveResize}
+      onPointerUp={endResize}
+      onPointerCancel={endResize}
+      className="absolute inset-x-0 bottom-0 z-30 h-2 cursor-ns-resize"
+      style={{ touchAction: "none" }}
+    />
+  );
+
+  const renderPrimaryStage = (immersiveMode: boolean) => (
+    <VrmStage
+      ref={primaryStageRef}
+      modelId={primaryModelId}
+      modelsReady={modelsReady}
+      viewTransform={viewTransform}
+      onViewTransformChange={persistView}
+      editView={editView}
+      visible={modelVisible}
+      blurred={stageBlurred}
+      revealing={stageRevealing}
+      backgroundStyle={modelBackgroundStyle}
+      avatarSource={avatarSource}
+      avatarName={avatarName}
+      avatarVisible={avatarVisible}
+      offline={!llmLoaded}
+      micStatus={micStatusNode}
+      showResetButton={editView}
+      onResetView={() => persistView(DEFAULT_VIEW_TRANSFORM)}
+      chrome={!immersiveMode}
+      transparent={immersiveMode && stageTransparent}
+      fill={immersiveMode}
+      style={immersiveMode ? undefined : groupActive ? { order: -1 } : undefined}
     >
-      {groupActive && renderBackgroundPanel("primary", backgroundsOpen, setBackgroundsOpen, fileInputRef, -4)}
-      {groupActive && renderOutfitPanel("primary", outfitOpen, setOutfitOpen, activeCharacter, targetModelId, avatarName, -3)}
-      {groupActive &&
-        navbarVisible &&
-        renderNavbar(NAV_A_IDS, navCompact(NAV_A_IDS.length), "A", -2)}
+      {!immersiveMode && windowResizeHandle}
+    </VrmStage>
+  );
 
-      <VrmStage
-        ref={primaryStageRef}
-        modelId={primaryModelId}
-        modelsReady={modelsReady}
-        viewTransform={viewTransform}
-        onViewTransformChange={persistView}
-        editView={editView}
-        visible={modelVisible}
-        blurred={stageBlurred}
-        revealing={stageRevealing}
-        backgroundStyle={modelBackgroundStyle}
-        avatarSource={avatarSource}
-        avatarName={avatarName}
-        avatarVisible={avatarVisible}
-        offline={!llmLoaded}
-        micStatus={micStatusNode}
-        showResetButton={editView}
-        onResetView={() => persistView(DEFAULT_VIEW_TRANSFORM)}
-        style={groupActive ? { order: -1 } : undefined}
-      >
-        <div
-          role="separator"
-          aria-label="Изменить высоту окна"
-          title="Изменить высоту окна"
-          onPointerDown={(event) => beginResize("window", event)}
-          onPointerMove={moveResize}
-          onPointerUp={endResize}
-          onPointerCancel={endResize}
-          className="absolute inset-x-0 bottom-0 z-30 h-2 cursor-ns-resize"
-          style={{ touchAction: "none" }}
-        />
-      </VrmStage>
+  const renderPartnerStage = (immersiveMode: boolean) => (
+    <VrmStage
+      ref={partnerStageRef}
+      modelId={partnerStageModelId}
+      modelsReady={modelsReady}
+      viewTransform={partnerViewTransform}
+      onViewTransformChange={persistPartnerView}
+      editView={partnerEditView}
+      visible={modelVisible}
+      blurred={stageBlurred}
+      revealing={stageRevealing}
+      backgroundStyle={partnerModelBackgroundStyle}
+      avatarSource={partnerAvatarSource}
+      avatarName={partnerAvatarName}
+      avatarVisible={avatarVisible}
+      offline={!llmLoaded}
+      micStatus={micStatusNode}
+      showResetButton={partnerEditView}
+      onResetView={() => persistPartnerView(DEFAULT_VIEW_TRANSFORM)}
+      chrome={!immersiveMode}
+      transparent={immersiveMode && stageTransparent}
+      fill={immersiveMode}
+      style={immersiveMode ? undefined : { order: 1 }}
+    />
+  );
 
+  const renderChatPanel = (immersiveMode: boolean) => {
+    const chatStyle: CSSProperties = {
+      width: chatOpen
+        ? immersiveMode
+          ? (isFullscreen ? (groupActive ? "30%" : "40%") : chatWidth)
+          : chatWidth
+        : 0,
+      order: !immersiveMode && groupActive ? 0 : undefined,
+    };
+    return (
       <div
-        className={`relative shrink-0 overflow-hidden ${
+        className={`relative shrink-0 overflow-hidden ${immersiveMode ? "p-3" : ""} ${
           resizing ? "" : "transition-[width] duration-[360ms] ease-in-out"
         }`}
-        style={{ width: chatOpen ? chatWidth : 0, order: groupActive ? 0 : undefined }}
+        style={chatStyle}
       >
-        {chatOpen && (
+        {chatOpen && !immersiveMode && (
           <div
             role="separator"
             aria-label="Изменить ширину чата"
@@ -2511,8 +2620,8 @@ function MainApp() {
         )}
         <aside
           inert={!chatOpen}
-          className={`mx-3 flex h-[88vh] flex-col rounded-[24px] ${chatPanelClass} transition-[opacity,transform] duration-[360ms] ease-in-out ${chatOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-3 opacity-0"}`}
-          style={{ width: chatWidth - 24 }}
+          className={`flex flex-col rounded-[24px] ${immersiveMode ? "h-full w-full" : "mx-3 h-[88vh]"} ${chatPanelClass} transition-[opacity,transform] duration-[360ms] ease-in-out ${chatOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-3 opacity-0"}`}
+          style={immersiveMode ? undefined : { width: chatWidth - 24 }}
         >
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-2 pt-4">
             {messages.map((message) => {
@@ -2614,61 +2723,104 @@ function MainApp() {
           </form>
         </aside>
       </div>
+    );
+  };
 
-      {!groupActive &&
-        navbarVisible &&
-        renderNavbar(
-          BUTTONS.map((item) => item.id),
-          navCompact(BUTTONS.length),
-          "A",
+  const modelAreaStyle: CSSProperties | undefined = immersive
+    ? isFullscreen
+      ? { width: chatOpen ? (groupActive ? "35%" : "60%") : groupActive ? "50%" : "100%" }
+      : { flex: "1 1 auto", minWidth: 0 }
+    : undefined;
+  const partnerAreaStyle: CSSProperties | undefined = immersive
+    ? isFullscreen
+      ? { width: chatOpen ? "35%" : "50%" }
+      : { flex: "1 1 auto", minWidth: 0 }
+    : undefined;
+
+  return (
+    <div
+      ref={rootRef}
+      onPointerMove={handlePointerActivity}
+      onPointerLeave={handlePointerLeave}
+      className={
+        immersive
+          ? "relative flex h-screen w-screen items-stretch justify-start overflow-hidden bg-transparent"
+          : "flex h-screen w-max items-start justify-start bg-transparent pb-[7vh] pl-[31px] pr-[31px] pt-[5vh]"
+      }
+    >
+      <div
+        className={immersive ? "relative h-full overflow-hidden" : "contents"}
+        style={modelAreaStyle}
+      >
+        {renderPrimaryStage(immersive)}
+        {immersive && navbarVisible && (
+          <div className="absolute right-3 top-3 z-30">
+            {renderNavbar(
+              groupActive ? NAV_A_IDS : BUTTONS.map((item) => item.id),
+              navCompact(groupActive ? NAV_A_IDS.length : BUTTONS.length),
+              "A",
+            )}
+          </div>
         )}
+      </div>
+
+      {renderChatPanel(immersive)}
 
       {groupActive && (
-        <VrmStage
-          ref={partnerStageRef}
-          modelId={partnerStageModelId}
-          modelsReady={modelsReady}
-          viewTransform={partnerViewTransform}
-          onViewTransformChange={persistPartnerView}
-          editView={partnerEditView}
-          visible={modelVisible}
-          blurred={stageBlurred}
-          revealing={stageRevealing}
-          backgroundStyle={partnerModelBackgroundStyle}
-          avatarSource={partnerAvatarSource}
-          avatarName={partnerAvatarName}
-          avatarVisible={avatarVisible}
-          offline={!llmLoaded}
-          micStatus={micStatusNode}
-          showResetButton={partnerEditView}
-          onResetView={() => persistPartnerView(DEFAULT_VIEW_TRANSFORM)}
-          style={{ order: 1 }}
-        />
+        <div
+          className={immersive ? "relative h-full overflow-hidden" : "contents"}
+          style={partnerAreaStyle}
+        >
+          {renderPartnerStage(immersive)}
+          {immersive && navbarVisible && (
+            <div className="absolute right-3 top-3 z-30">
+              {renderNavbar(NAV_B_IDS, navCompact(NAV_B_IDS.length), "B")}
+            </div>
+          )}
+        </div>
       )}
 
-      {groupActive &&
-        navbarVisible &&
-        renderNavbar(NAV_B_IDS, navCompact(NAV_B_IDS.length), "B", 2)}
-
-      {!groupActive &&
-        renderBackgroundPanel("primary", backgroundsOpen, setBackgroundsOpen, fileInputRef)}
-      {groupActive &&
-        renderBackgroundPanel("partner", backgroundsBOpen, setBackgroundsBOpen, fileInputBRef, 3)}
-      {renderCharactersPanel(groupActive ? 5 : undefined)}
-      {!groupActive &&
-        renderOutfitPanel("primary", outfitOpen, setOutfitOpen, activeCharacter, targetModelId, avatarName)}
-      {groupActive &&
-        renderOutfitPanel(
-          "partner",
-          outfitBOpen,
-          setOutfitBOpen,
-          groupPartner,
-          partnerModelId,
-          partnerAvatarName,
-          4,
-        )}
-      {renderReactionsPanel(groupActive ? 6 : undefined)}
-      {renderGroupPanel(groupActive ? 7 : undefined)}
+      <div
+        className={
+          immersive
+            ? "pointer-events-none absolute left-3 top-3 z-40 flex items-start gap-2 [&>*]:pointer-events-auto"
+            : "contents"
+        }
+      >
+        {groupActive && renderBackgroundPanel("primary", backgroundsOpen, setBackgroundsOpen, fileInputRef, immersive ? undefined : -4)}
+        {groupActive && renderOutfitPanel("primary", outfitOpen, setOutfitOpen, activeCharacter, targetModelId, avatarName, immersive ? undefined : -3)}
+        {groupActive &&
+          navbarVisible &&
+          !immersive &&
+          renderNavbar(NAV_A_IDS, navCompact(NAV_A_IDS.length), "A", -2)}
+        {!groupActive &&
+          navbarVisible &&
+          !immersive &&
+          renderNavbar(
+            BUTTONS.map((item) => item.id),
+            navCompact(BUTTONS.length),
+            "A",
+          )}
+        {!groupActive &&
+          renderBackgroundPanel("primary", backgroundsOpen, setBackgroundsOpen, fileInputRef)}
+        {groupActive &&
+          renderBackgroundPanel("partner", backgroundsBOpen, setBackgroundsBOpen, fileInputBRef, immersive ? undefined : 3)}
+        {renderCharactersPanel(immersive ? undefined : groupActive ? 5 : undefined)}
+        {!groupActive &&
+          renderOutfitPanel("primary", outfitOpen, setOutfitOpen, activeCharacter, targetModelId, avatarName)}
+        {groupActive &&
+          renderOutfitPanel(
+            "partner",
+            outfitBOpen,
+            setOutfitBOpen,
+            groupPartner,
+            partnerModelId,
+            partnerAvatarName,
+            immersive ? undefined : 4,
+          )}
+        {renderReactionsPanel(immersive ? undefined : groupActive ? 6 : undefined)}
+        {renderGroupPanel(immersive ? undefined : groupActive ? 7 : undefined)}
+      </div>
 
       {cropSource && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">

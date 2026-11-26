@@ -108,6 +108,9 @@ type VrmStageProps = {
   onResetView?: () => void;
   children?: ReactNode;
   style?: CSSProperties;
+  chrome?: boolean;
+  transparent?: boolean;
+  fill?: boolean;
 };
 
 const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
@@ -130,6 +133,9 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     onResetView,
     children,
     style,
+    chrome = true,
+    transparent = false,
+    fill = false,
   },
   ref,
 ) {
@@ -604,16 +610,22 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     });
   };
 
+  const stageClass = [
+    "relative shrink-0 overflow-hidden",
+    fill ? "h-full w-full" : "aspect-[9/16] h-[88vh]",
+    chrome ? "rounded-[32px] shadow-[0_18px_44px_-16px_rgba(0,0,0,0.35)]" : "",
+    chrome && !fill ? "mr-3" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div
-      className="relative mr-3 aspect-[9/16] h-[88vh] shrink-0 overflow-hidden rounded-[32px] shadow-[0_18px_44px_-16px_rgba(0,0,0,0.35)]"
-      style={style}
-    >
+    <div className={stageClass} style={style}>
       <div
         className={`model-stage absolute inset-0 ${
           blurred ? "model-stage-blur" : revealing ? "model-stage-reveal" : ""
         }`}
-        style={backgroundStyle}
+        style={transparent ? undefined : backgroundStyle}
       >
         <div
           ref={containerRef}

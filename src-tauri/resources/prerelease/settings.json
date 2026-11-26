@@ -5,6 +5,7 @@
   "port": 8081,
   "chatAppearance": "default",
   "navbarVisibility": "always",
+  "viewMode": "default",
   "launchAtLogin": false,
   "startWithChat": false,
   "startWithModel": false,

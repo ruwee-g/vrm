@@ -135,6 +135,20 @@ impl Default for NavbarVisibility {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum ViewMode {
+    Default,
+    Overlay,
+    Fullscreen,
+}
+
+impl Default for ViewMode {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ApiSettings {
@@ -343,6 +357,8 @@ struct AppSettings {
     #[serde(default)]
     navbar_visibility: NavbarVisibility,
     #[serde(default)]
+    view_mode: ViewMode,
+    #[serde(default)]
     launch_at_login: bool,
     #[serde(default)]
     start_with_chat: bool,
@@ -398,6 +414,7 @@ impl Default for AppSettings {
             chat_width: DEFAULT_CHAT_WIDTH,
             chat_appearance: ChatAppearance::default(),
             navbar_visibility: NavbarVisibility::default(),
+            view_mode: ViewMode::default(),
             launch_at_login: false,
             start_with_chat: false,
             start_with_model: false,
