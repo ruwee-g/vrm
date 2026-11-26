@@ -963,7 +963,9 @@ function MainApp() {
         messagesRef.current = nextMessages;
         setMessages(nextMessages);
         if (!didInitRef.current || characterChanged) {
-          setViewTransform(await readViewTransform(id).catch(() => DEFAULT_VIEW_TRANSFORM));
+          setViewTransform(
+            await readViewTransform(id, viewModeRef.current).catch(() => DEFAULT_VIEW_TRANSFORM),
+          );
         }
         didInitRef.current = true;
         setModelsReady(true);
@@ -1044,6 +1046,15 @@ function MainApp() {
     void writeSettings(next).catch((error) =>
       console.error("Не удалось сохранить режим отображения", error),
     );
+    void readViewTransform(activeCharacterIdRef.current, mode)
+      .then(setViewTransform)
+      .catch(() => setViewTransform(DEFAULT_VIEW_TRANSFORM));
+    const partnerId = groupPartnerIdRef.current;
+    if (partnerId) {
+      void readViewTransform(partnerId, mode)
+        .then(setPartnerViewTransform)
+        .catch(() => setPartnerViewTransform(DEFAULT_VIEW_TRANSFORM));
+    }
   };
   changeViewModeRef.current = changeViewMode;
 
@@ -1439,7 +1450,9 @@ function MainApp() {
     const nextMessages = await readChat(characterId).catch(() => [] as ChatMessage[]);
     messagesRef.current = nextMessages;
     setMessages(nextMessages);
-    setViewTransform(await readViewTransform(characterId).catch(() => DEFAULT_VIEW_TRANSFORM));
+    setViewTransform(
+      await readViewTransform(characterId, viewModeRef.current).catch(() => DEFAULT_VIEW_TRANSFORM),
+    );
     await loadCharacterBackgroundState(characterId);
     if (aiAvailable()) void drainPendingRef.current(characterId);
   };
@@ -1488,7 +1501,9 @@ function MainApp() {
     const nextMessages = await readChat(key).catch(() => [] as ChatMessage[]);
     messagesRef.current = nextMessages;
     setMessages(nextMessages);
-    setPartnerViewTransform(await readViewTransform(id).catch(() => DEFAULT_VIEW_TRANSFORM));
+    setPartnerViewTransform(
+      await readViewTransform(id, viewModeRef.current).catch(() => DEFAULT_VIEW_TRANSFORM),
+    );
     await loadCharacterBackgroundState(id, "partner");
     if (aiAvailable()) void drainPendingRef.current(key);
   };
@@ -1881,7 +1896,7 @@ function MainApp() {
 
   const persistView = (next: ViewTransform) => {
     setViewTransform(next);
-    void writeViewTransform(activeCharacterIdRef.current, next).catch((error) =>
+    void writeViewTransform(activeCharacterIdRef.current, next, viewModeRef.current).catch((error) =>
       console.error("Не удалось сохранить вид модели", error),
     );
   };
@@ -1890,7 +1905,7 @@ function MainApp() {
     setPartnerViewTransform(next);
     const id = groupPartnerIdRef.current;
     if (!id) return;
-    void writeViewTransform(id, next).catch((error) =>
+    void writeViewTransform(id, next, viewModeRef.current).catch((error) =>
       console.error("Не удалось сохранить вид модели напарника", error),
     );
   };
@@ -2592,19 +2607,22 @@ function MainApp() {
   );
 
   const renderChatPanel = (immersiveMode: boolean) => {
+    const fullscreenChat = immersiveMode && isFullscreen;
     const chatStyle: CSSProperties = {
-      width: chatOpen
-        ? immersiveMode
-          ? (isFullscreen ? (groupActive ? "30%" : "40%") : chatWidth)
-          : chatWidth
-        : 0,
+      width: chatOpen ? chatWidth : 0,
       order: !immersiveMode && groupActive ? 0 : undefined,
     };
     return (
       <div
-        className={`relative shrink-0 overflow-hidden ${immersiveMode ? "p-3" : ""} ${
-          resizing ? "" : "transition-[width] duration-[360ms] ease-in-out"
-        }`}
+        className={
+          fullscreenChat
+            ? `absolute bottom-3 right-3 top-3 z-30 overflow-hidden ${
+                resizing ? "" : "transition-[width] duration-[360ms] ease-in-out"
+              }`
+            : `relative shrink-0 overflow-hidden ${immersiveMode ? "p-3" : ""} ${
+                resizing ? "" : "transition-[width] duration-[360ms] ease-in-out"
+              }`
+        }
         style={chatStyle}
       >
         {chatOpen && !immersiveMode && (
@@ -2730,14 +2748,16 @@ function MainApp() {
 
   const modelAreaStyle: CSSProperties | undefined = immersive
     ? isFullscreen
-      ? { width: chatOpen ? (groupActive ? "35%" : "60%") : groupActive ? "50%" : "100%" }
+      ? { width: groupActive ? "50%" : "100%" }
       : { flex: "1 1 auto", minWidth: 0 }
     : undefined;
   const partnerAreaStyle: CSSProperties | undefined = immersive
     ? isFullscreen
-      ? { width: chatOpen ? "35%" : "50%" }
+      ? { width: "50%" }
       : { flex: "1 1 auto", minWidth: 0 }
     : undefined;
+  const fullscreenNavbarOffset =
+    isFullscreen && chatOpen ? { right: chatWidth + 24 } : undefined;
 
   return (
     <div
@@ -2756,7 +2776,7 @@ function MainApp() {
       >
         {renderPrimaryStage(immersive)}
         {immersive && navbarVisible && (
-          <div className="absolute right-3 top-3 z-30">
+          <div className="absolute top-3 z-30" style={{ right: 12, ...fullscreenNavbarOffset }}>
             {renderNavbar(
               groupActive ? NAV_A_IDS : BUTTONS.map((item) => item.id),
               navCompact(groupActive ? NAV_A_IDS.length : BUTTONS.length),
@@ -2775,7 +2795,7 @@ function MainApp() {
         >
           {renderPartnerStage(immersive)}
           {immersive && navbarVisible && (
-            <div className="absolute right-3 top-3 z-30">
+            <div className="absolute top-3 z-30" style={{ right: 12, ...fullscreenNavbarOffset }}>
               {renderNavbar(NAV_B_IDS, navCompact(NAV_B_IDS.length), "B")}
             </div>
           )}

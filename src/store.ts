@@ -354,16 +354,25 @@ export async function writeChatSummary(
   await invoke("write_chat_summary", { characterId, summary });
 }
 
-export async function readViewTransform(characterId: string): Promise<ViewTransform> {
-  return invoke<ViewTransform>("read_view_transform", { characterId });
+export const viewTransformKey = (characterId: string, viewMode: ViewMode) =>
+  viewMode === "default" ? characterId : `${characterId}:${viewMode}`;
+
+export async function readViewTransform(
+  characterId: string,
+  viewMode: ViewMode = "default",
+): Promise<ViewTransform> {
+  return invoke<ViewTransform>("read_view_transform", {
+    characterId: viewTransformKey(characterId, viewMode),
+  });
 }
 
 export async function writeViewTransform(
   characterId: string,
   transform: ViewTransform,
+  viewMode: ViewMode = "default",
 ): Promise<void> {
   await invoke("write_view_transform", {
-    characterId,
+    characterId: viewTransformKey(characterId, viewMode),
     transform,
   });
 }
