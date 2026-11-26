@@ -19,6 +19,14 @@ VRMA_01.vrma - VRMA_07.vrma
   VRMA_01.vrma - VRMA_07.vrma are bundled as reaction animations; the mapping
   is defined in src/reactions.ts.
 
+dance.vrma
+  Source: ekza-space/ekza-studio CC0 starter pack
+  (apps/web/public/library/animations/dance.vrma)
+  Original: Universal Animation Library by Quaternius, CC0 1.0
+  https://quaternius.com/packs/universalanimationlibrary.html
+  Retargeted from Rigify to VRM humanoid by Ekza Studio (CC0 1.0).
+  Used as the primary looping dance animation.
+
 Required credit for the VRoid Project motion pack:
 
     Character animation credits to pixiv Inc.'s VRoid Project

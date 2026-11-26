@@ -49,6 +49,7 @@ import {
   type ViewTransform,
 } from "./store";
 
+const DANCE_ANIMATION_URL = "/animations/dance.vrma";
 const REACTION_ANIMATION_URLS = Array.from(
   new Set(
     Object.values(REACTIONS)
@@ -56,7 +57,9 @@ const REACTION_ANIMATION_URLS = Array.from(
       .filter((url): url is string => Boolean(url)),
   ),
 );
-const ALL_ANIMATION_URLS = Array.from(new Set(REACTION_ANIMATION_URLS));
+const ALL_ANIMATION_URLS = Array.from(
+  new Set([DANCE_ANIMATION_URL, ...REACTION_ANIMATION_URLS]),
+);
 const ANIMATION_SET_KEY = ALL_ANIMATION_URLS.join("|");
 
 const REACTION_RELEASE = 0.52;
@@ -260,6 +263,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     let vrm: VRM | null = null;
     let loadToken = 0;
     let mixer: THREE.AnimationMixer | null = null;
+    let danceAction: THREE.AnimationAction | null = null;
     let actionsByUrl = new Map<string, THREE.AnimationAction>();
     let actionWeights = new Map<
       THREE.AnimationAction,
@@ -324,6 +328,14 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
 
     const releaseAction = () => {
       for (const state of actionWeights.values()) state.target = 0;
+    };
+
+    const syncDanceWeight = () => {
+      if (!danceAction) return;
+      const state = actionWeights.get(danceAction);
+      if (!state) return;
+      state.target = !reactionId && activityState === "dancing" ? 1 : 0;
+      if (state.target === 1 && state.value < 0.01) danceAction.reset().play();
     };
 
     const playAction = (url: string) => {
@@ -555,66 +567,111 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         addOverlayRotation(model, "rightIndexProximal", 0, 0, -finger);
       }
 
-      if (danceMotionMix > 0.01) {
-        dancePhase += delta * (4.9 + clamp01(audioLevelRef.current) * 1.2);
-        const influence = danceMotionMix * scale;
-        const beat = Math.sin(dancePhase);
-        const delayed = Math.sin(dancePhase - 0.5);
-        const side =
-          noise1(dancePhase * 0.18) * 0.6 + Math.sin(dancePhase * 0.5) * 0.4;
-        addOverlayOffset(model, "hips", 0, beat * 0.012 * influence, 0);
+      const fallbackMix = danceAction ? 0 : danceMotionMix;
+      if (fallbackMix > 0.01) {
+        const audio = clamp01(audioLevelRef.current);
+        dancePhase += delta * (2.7 + audio * 0.7);
+        const influence = fallbackMix * scale;
+        const step = Math.sin(dancePhase);
+        const stepDelayed = Math.sin(dancePhase - 0.45);
+        const sway = Math.sin(dancePhase * 0.5);
+        const accent = Math.sin(dancePhase * 0.25 + 1.2);
+
+        addOverlayOffset(
+          model,
+          "hips",
+          sway * 0.028 * influence,
+          -(1 - Math.cos(dancePhase)) * 0.012 * influence,
+          0,
+        );
         addOverlayRotation(
           model,
           "hips",
-          0.01 * Math.cos(dancePhase) * influence,
-          side * 0.14 * influence,
-          beat * 0.08 * influence,
+          0.015 * accent * influence,
+          sway * 0.15 * influence,
+          step * 0.05 * influence,
         );
         addOverlayRotation(
           model,
           "spine",
           0.02 * Math.cos(dancePhase) * influence,
-          beat * 0.07 * influence,
-          -side * 0.07 * influence,
+          -sway * 0.11 * influence,
+          -step * 0.035 * influence,
         );
-        addOverlayRotation(model, "chest", 0, 0, beat * 0.05 * influence);
+        addOverlayRotation(model, "chest", 0, -sway * 0.07 * influence, step * 0.04 * influence);
+        addOverlayRotation(model, "upperChest", 0, 0, -step * 0.025 * influence);
+        addOverlayRotation(
+          model,
+          "neck",
+          -0.015 * influence,
+          sway * 0.04 * influence,
+          -sway * 0.03 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "head",
+          stepDelayed * 0.025 * influence,
+          sway * 0.07 * influence,
+          -sway * 0.05 * influence,
+        );
+
+        addOverlayRotation(model, "leftUpperLeg", step * 0.14 * influence, 0, sway * 0.05 * influence);
+        addOverlayRotation(
+          model,
+          "rightUpperLeg",
+          -step * 0.14 * influence,
+          0,
+          -sway * 0.05 * influence,
+        );
+        addOverlayRotation(model, "leftLowerLeg", (0.06 + Math.max(0, -step) * 0.13) * influence, 0, 0);
+        addOverlayRotation(model, "rightLowerLeg", (0.06 + Math.max(0, step) * 0.13) * influence, 0, 0);
+        addOverlayRotation(model, "leftFoot", -step * 0.06 * influence, 0, 0);
+        addOverlayRotation(model, "rightFoot", step * 0.06 * influence, 0, 0);
+
         addOverlayRotation(
           model,
           "leftShoulder",
-          delayed * 0.12 * influence,
+          stepDelayed * 0.07 * influence,
+          0,
+          -0.04 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "rightShoulder",
+          -stepDelayed * 0.07 * influence,
+          0,
+          0.04 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "leftUpperArm",
+          stepDelayed * 0.3 * influence,
+          -0.05 * influence,
+          -0.08 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "rightUpperArm",
+          -stepDelayed * 0.3 * influence,
+          0.05 * influence,
+          0.08 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "leftLowerArm",
+          (0.18 + step * 0.14) * influence,
           0,
           -0.05 * influence,
         );
         addOverlayRotation(
           model,
-          "rightShoulder",
-          -delayed * 0.12 * influence,
+          "rightLowerArm",
+          (0.18 - step * 0.14) * influence,
           0,
           0.05 * influence,
         );
-        addOverlayRotation(model, "leftUpperArm", beat * 0.42 * influence, 0, -0.06 * influence);
-        addOverlayRotation(model, "rightUpperArm", -beat * 0.42 * influence, 0, 0.06 * influence);
-        addOverlayRotation(
-          model,
-          "leftLowerArm",
-          delayed * 0.32 * influence,
-          0,
-          -0.12 * influence,
-        );
-        addOverlayRotation(
-          model,
-          "rightLowerArm",
-          -delayed * 0.32 * influence,
-          0,
-          0.12 * influence,
-        );
-        addOverlayRotation(
-          model,
-          "head",
-          Math.sin(dancePhase * 2) * 0.025 * influence,
-          side * 0.045 * influence,
-          delayed * 0.06 * influence,
-        );
+        addOverlayRotation(model, "leftHand", step * 0.06 * influence, 0, -0.03 * influence);
+        addOverlayRotation(model, "rightHand", -step * 0.06 * influence, 0, 0.03 * influence);
       }
     };
 
@@ -656,7 +713,10 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       );
 
       if (config.animationUrl) playAction(config.animationUrl);
-      else releaseAction();
+      else {
+        releaseAction();
+        syncDanceWeight();
+      }
     };
     reactRef.current = playReaction;
 
@@ -687,16 +747,25 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           mixer = new THREE.AnimationMixer(model.scene);
           actionsByUrl = new Map();
           actionWeights = new Map();
+          danceAction = null;
           for (const { url, animation } of items) {
             const clip = createVRMAnimationClip(animation, model);
             const action = mixer.clipAction(clip);
-            action.setLoop(THREE.LoopOnce, 1);
-            action.clampWhenFinished = true;
+            if (url === DANCE_ANIMATION_URL) {
+              action.setLoop(THREE.LoopRepeat, Infinity);
+              action.clampWhenFinished = false;
+              action.timeScale = 0.75;
+              danceAction = action;
+            } else {
+              action.setLoop(THREE.LoopOnce, 1);
+              action.clampWhenFinished = true;
+            }
             action.play();
             action.setEffectiveWeight(0);
             actionsByUrl.set(url, action);
             actionWeights.set(action, { value: 0, target: 0 });
           }
+          syncDanceWeight();
         })
         .catch((error) => console.error("Не удалось подготовить анимации", error));
     };
@@ -730,6 +799,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         scene.remove(vrm.scene);
         vrm = null;
       }
+      danceAction = null;
       actionsByUrl = new Map();
       actionWeights = new Map();
       reactionId = null;
@@ -844,6 +914,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           idleDirectorNext = Math.max(idleDirectorNext, 2 + Math.random() * 3);
         }
         activityState = nextState;
+        syncDanceWeight();
       }
 
       if (mixer) {
@@ -888,11 +959,12 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           }
           if (reactionRemaining <= 0) {
             reactionId = null;
-                  reactionGazeYaw = 0;
+            reactionGazeYaw = 0;
             reactionGazePitch = 0;
             poseTarget = { ...NEUTRAL_POSE };
             clearExpressions();
             releaseAction();
+            syncDanceWeight();
             idleDirectorNext = Math.max(idleDirectorNext, 2 + Math.random() * 3);
           }
         }
