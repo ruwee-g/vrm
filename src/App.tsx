@@ -97,6 +97,12 @@ const BUTTONS = [
   { id: "power", icon: "/icons/nav/power.svg?v=1", label: "Питание модели" },
 ];
 
+const VIEW_MODE_OPTIONS: { id: ViewMode; icon: string; label: string }[] = [
+  { id: "default", icon: "/icons/nav/view-mode-default.svg?v=1", label: "Обычный" },
+  { id: "overlay", icon: "/icons/nav/view-mode-overlay.svg?v=1", label: "Поверх экрана" },
+  { id: "fullscreen", icon: "/icons/nav/view-mode-fullscreen.svg?v=1", label: "Фулскрин" },
+];
+
 const BACKGROUND_STORAGE_KEY = "vrm.backgrounds.v1";
 const BACKGROUND_MIGRATED_KEY = "vrm.backgrounds.migrated.v2";
 const DEFAULT_WINDOW_WIDTH = 470;
@@ -259,6 +265,7 @@ function MainApp() {
   const [modelLoading, setModelLoading] = useState(false);
   const [modelOnly, setModelOnly] = useState(false);
   const [powerMenu, setPowerMenu] = useState<{ x: number; y: number } | null>(null);
+  const [viewModeMenu, setViewModeMenu] = useState<{ x: number; y: number } | null>(null);
   const [windowHeight, setWindowHeight] = useState(DEFAULT_SETTINGS.windowHeight);
   const [chatWidth, setChatWidth] = useState(DEFAULT_SETTINGS.chatWidth);
   const [chatAppearance, setChatAppearance] = useState(DEFAULT_SETTINGS.chatAppearance);
@@ -1219,6 +1226,8 @@ function MainApp() {
       : DEFAULT_MODEL_ID;
   const navCompact = (count: number) =>
     windowHeight * 0.88 < count * NAV_BUTTON_SIZE + (count - 1) * NAV_GAP;
+  const navWidthFor = (count: number) =>
+    navCompact(count) ? NAV_BUTTON_SIZE * 2 + NAV_GAP : NAV_BUTTON_SIZE;
 
   useEffect(() => {
     micOnRef.current = micOn;
@@ -2088,7 +2097,7 @@ function MainApp() {
                             ? modelShown
                             : undefined
         }
-        onClick={() => {
+        onClick={(event) => {
           if (b.id === "chat") setChatOpen((value) => !value);
           else if (b.id === "bg") {
             const setOpen = isB ? setBackgroundsBOpen : setBackgroundsOpen;
@@ -2105,9 +2114,8 @@ function MainApp() {
             closePanels();
             setEdit((value) => !value);
           } else if (b.id === "display") {
-            changeViewMode(
-              viewMode === "default" ? "overlay" : viewMode === "overlay" ? "fullscreen" : "default",
-            );
+            setPowerMenu(null);
+            setViewModeMenu({ x: event.clientX, y: event.clientY });
           } else if (b.id === "reactions") {
             closePanels();
             setReactionsOpen((value) => !value);
@@ -2610,6 +2618,10 @@ function MainApp() {
     const fullscreenChat = immersiveMode && isFullscreen;
     const chatStyle: CSSProperties = {
       width: chatOpen ? chatWidth : 0,
+      right:
+        fullscreenChat && !groupActive
+          ? 12 + navWidthFor(BUTTONS.length) + 8
+          : undefined,
       order: !immersiveMode && groupActive ? 0 : undefined,
     };
     return (
@@ -2757,7 +2769,7 @@ function MainApp() {
       : { flex: "1 1 auto", minWidth: 0 }
     : undefined;
   const fullscreenNavbarOffset =
-    isFullscreen && chatOpen ? { right: chatWidth + 24 } : undefined;
+    isFullscreen && groupActive && chatOpen ? { right: chatWidth + 24 } : undefined;
 
   return (
     <div
@@ -2775,7 +2787,7 @@ function MainApp() {
         style={modelAreaStyle}
       >
         {renderPrimaryStage(immersive)}
-        {immersive && navbarVisible && (
+        {immersive && (groupActive || isFullscreen) && navbarVisible && (
           <div className="absolute top-3 z-30" style={{ right: 12, ...fullscreenNavbarOffset }}>
             {renderNavbar(
               groupActive ? NAV_A_IDS : BUTTONS.map((item) => item.id),
@@ -2787,6 +2799,13 @@ function MainApp() {
       </div>
 
       {renderChatPanel(immersive)}
+
+      {immersive && !isFullscreen && !groupActive && navbarVisible &&
+        renderNavbar(
+          BUTTONS.map((item) => item.id),
+          navCompact(BUTTONS.length),
+          "A",
+        )}
 
       {groupActive && (
         <div
@@ -2963,6 +2982,42 @@ function MainApp() {
             >
               Запустить без ИИ
             </button>
+          </div>
+        </>
+      )}
+
+      {viewModeMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-[80]"
+            onPointerDown={() => setViewModeMenu(null)}
+          />
+          <div
+            className="fixed z-[81] w-[196px] rounded-xl bg-white/90 p-1 shadow-[0_18px_44px_-16px_rgba(0,0,0,0.35)] backdrop-blur-2xl backdrop-saturate-150"
+            style={{
+              left: clamp(viewModeMenu.x, 8, Math.max(8, window.innerWidth - 204)),
+              top: clamp(viewModeMenu.y, 8, Math.max(8, window.innerHeight - 152)),
+            }}
+          >
+            {VIEW_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  changeViewMode(option.id);
+                  setViewModeMenu(null);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[12px] transition ${
+                  viewMode === option.id
+                    ? "bg-neutral-200/80 text-neutral-900"
+                    : "text-neutral-700 hover:bg-neutral-200/70"
+                }`}
+              >
+                <img src={option.icon} alt="" draggable={false} className="h-4 w-4 shrink-0" />
+                <span>{option.label}</span>
+                {viewMode === option.id && <span className="ml-auto text-[11px]">✓</span>}
+              </button>
+            ))}
           </div>
         </>
       )}
