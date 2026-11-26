@@ -26,7 +26,7 @@ VITE_DEV_RUNNER_PATH=/path/to/llama-server
 
 Обновления включены только в pre-release. Приложение автоматически проверяет endpoint GitHub Releases и показывает красную точку на иконке настроек, если доступна новая версия. Вручную обновление можно проверить в `Общее` → `Обновления`.
 
-Endpoint: `https://github.com/ruwee-g/vrm/releases/latest/download/latest.json`.
+Endpoint: `https://raw.githubusercontent.com/ruwee-g/vrm/main/latest.json`.
 
 ### Ключ подписи
 

@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0-pre.3",
+  "notes": "Новые реакции, автообновления и совместимость с Kimi API",
+  "pub_date": "2026-11-26T07:18:48.733Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRVXNTb29xYm9nUEdSTGhtZDllaEhhYUJ4NU9DU1ZJeTBMUm5oRXp2bXJZdFBaSWNmVE9iMHlqWUpiL2hxRkdlMTBXS01hYXgwVDZzUXlIOS9OQkVpM2hqS0lkcWpJZ1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1Njc3NTIzCWZpbGU6VlJNIFByZS1SZWxlYXNlLmFwcC50YXIuZ3oJdmVyc2lvbjowLjEuMC1wcmUuMwpWZ1NLM2UzNHhWa3g4OU1wWXRuemNkY05zRDV1dmlIdUswSCtVUURvdUJBdWNvaHNkdXJlR0h1L0VJbUJzdnFER3NaSnd1MGdjZ0VCc1RNTkVDZXRBUT09Cg==",
+      "url": "https://github.com/ruwee-g/vrm/releases/download/v0.1.0-pre.3/VRM.Pre-Release.app.tar.gz"
+    }
+  }
+}

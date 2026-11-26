@@ -38,14 +38,18 @@ const latest = {
   platforms: {
     "darwin-aarch64": {
       signature: readFileSync(join(macosDir, sigName), "utf8").trim(),
-      url: `https://github.com/${repo}/releases/download/${tag}/${tarName}`,
+      url: `https://github.com/${repo}/releases/download/${tag}/${tarName.replace(/\s+/g, ".")}`,
     },
   },
 };
 
 const latestPath = join(bundleDir, "latest.json");
-writeFileSync(latestPath, `${JSON.stringify(latest, null, 2)}\n`);
+const repoLatestPath = join(root, "latest.json");
+const latestText = `${JSON.stringify(latest, null, 2)}\n`;
+writeFileSync(latestPath, latestText);
+writeFileSync(repoLatestPath, latestText);
 console.log(latestPath);
+console.log(repoLatestPath);
 
 if (create) {
   const assets = [
