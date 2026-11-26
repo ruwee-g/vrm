@@ -1061,7 +1061,9 @@ function MainApp() {
 
   useEffect(() => {
     if (viewMode !== "fullscreen") return;
+    const startedAt = Date.now();
     const timer = window.setInterval(() => {
+      if (Date.now() - startedAt < 1500) return;
       void getCurrentWindow()
         .isFullscreen()
         .then((active) => {
