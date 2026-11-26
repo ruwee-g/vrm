@@ -48,7 +48,13 @@ import {
   type CharacterActivitySettings,
   type ViewTransform,
 } from "./store";
-import { EDITED_DANCE_URL, loadEditedDanceClip } from "./danceClip";
+import {
+  BASELINE_DANCE_URL,
+  EDITED_DANCE_URL,
+  bakeDanceSequence,
+  loadEditedDanceClip,
+  makeHybridBaselineClip,
+} from "./danceClip";
 
 const REACTION_ANIMATION_URLS = Array.from(
   new Set(
@@ -65,6 +71,11 @@ const EVENT_RELEASE = 0.42;
 const CLIP_FADE = 0.34;
 const POSE_TAU = 0.38;
 const EXPRESSION_TAU = 0.18;
+
+const DANCE_TIMESCALE = 0.35;
+const DANCE_CYCLES_CURRENT = 4;
+const DANCE_CYCLES_FIRST = 7;
+const DANCE_CROSSFADE = 0.5;
 
 type ActivityState = "reacting" | "thinking" | "listening" | "dancing" | "idle";
 
@@ -762,10 +773,29 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         const danceClip = await loadEditedDanceClip(loader, model);
         if (token !== loadToken || vrm !== model || !danceClip || !mixer) return;
 
-        danceAction = mixer.clipAction(danceClip);
+        const baselineGltf = await loader.loadAsync(BASELINE_DANCE_URL);
+        if (token !== loadToken || vrm !== model || !mixer) return;
+        const baselineAnimation = (baselineGltf.userData.vrmAnimations?.[0] ?? null) as
+          | VRMAnimation
+          | null;
+        const baselineClip = baselineAnimation
+          ? createVRMAnimationClip(baselineAnimation, model)
+          : null;
+        const hybridClip = baselineClip ? makeHybridBaselineClip(baselineClip, danceClip) : null;
+        const finalClip = hybridClip
+          ? bakeDanceSequence(
+              danceClip,
+              hybridClip,
+              DANCE_CYCLES_CURRENT,
+              DANCE_CYCLES_FIRST,
+              DANCE_CROSSFADE * DANCE_TIMESCALE,
+            )
+          : danceClip;
+
+        danceAction = mixer.clipAction(finalClip);
         danceAction.setLoop(THREE.LoopRepeat, Infinity);
         danceAction.clampWhenFinished = false;
-        danceAction.timeScale = 0.6;
+        danceAction.timeScale = DANCE_TIMESCALE;
         danceAction.play();
         danceAction.setEffectiveWeight(0);
         actionsByUrl.set(EDITED_DANCE_URL, danceAction);
