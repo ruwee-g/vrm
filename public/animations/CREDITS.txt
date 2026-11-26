@@ -19,13 +19,21 @@ VRMA_01.vrma - VRMA_07.vrma
   VRMA_01.vrma - VRMA_07.vrma are bundled as reaction animations; the mapping
   is defined in src/reactions.ts.
 
+dance-simple.glb
+  Source: Mesh2Motion, static/assets/human/animations/dance-simple.glb
+  https://github.com/Mesh2Motion/mesh2motion-app
+  License: CC0 1.0 Universal (LICENSE-CC0.MD: all animations are CC0).
+  Retargeted to the VRM humanoid in src/danceClip.ts; arm motion is replaced
+  with a relaxed down-by-the-side pose and very small arm/hand movement.
+  Used as the primary looping dance animation.
+
 dance.vrma
   Source: ekza-space/ekza-studio CC0 starter pack
   (apps/web/public/library/animations/dance.vrma)
   Original: Universal Animation Library by Quaternius, CC0 1.0
   https://quaternius.com/packs/universalanimationlibrary.html
   Retargeted from Rigify to VRM humanoid by Ekza Studio (CC0 1.0).
-  Used as the primary looping dance animation.
+  Kept as the previous dance baseline; no longer used at runtime.
 
 Required credit for the VRoid Project motion pack:
 

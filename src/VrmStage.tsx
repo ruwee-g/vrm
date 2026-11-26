@@ -48,8 +48,8 @@ import {
   type CharacterActivitySettings,
   type ViewTransform,
 } from "./store";
+import { EDITED_DANCE_URL, loadEditedDanceClip } from "./danceClip";
 
-const DANCE_ANIMATION_URL = "/animations/dance.vrma";
 const REACTION_ANIMATION_URLS = Array.from(
   new Set(
     Object.values(REACTIONS)
@@ -57,9 +57,7 @@ const REACTION_ANIMATION_URLS = Array.from(
       .filter((url): url is string => Boolean(url)),
   ),
 );
-const ALL_ANIMATION_URLS = Array.from(
-  new Set([DANCE_ANIMATION_URL, ...REACTION_ANIMATION_URLS]),
-);
+const ALL_ANIMATION_URLS = REACTION_ANIMATION_URLS;
 const ANIMATION_SET_KEY = ALL_ANIMATION_URLS.join("|");
 
 const REACTION_RELEASE = 0.52;
@@ -740,34 +738,42 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       }
     };
 
-    const setupAnimations = (model: VRM, token: number) => {
-      void animationsPromise
-        .then((items) => {
-          if (token !== loadToken || vrm !== model) return;
-          mixer = new THREE.AnimationMixer(model.scene);
-          actionsByUrl = new Map();
-          actionWeights = new Map();
-          danceAction = null;
-          for (const { url, animation } of items) {
-            const clip = createVRMAnimationClip(animation, model);
-            const action = mixer.clipAction(clip);
-            if (url === DANCE_ANIMATION_URL) {
-              action.setLoop(THREE.LoopRepeat, Infinity);
-              action.clampWhenFinished = false;
-              action.timeScale = 0.6;
-              danceAction = action;
-            } else {
-              action.setLoop(THREE.LoopOnce, 1);
-              action.clampWhenFinished = true;
-            }
-            action.play();
-            action.setEffectiveWeight(0);
-            actionsByUrl.set(url, action);
-            actionWeights.set(action, { value: 0, target: 0 });
-          }
-          syncDanceWeight();
-        })
-        .catch((error) => console.error("Не удалось подготовить анимации", error));
+    const setupAnimations = async (model: VRM, token: number) => {
+      try {
+        const items = await animationsPromise;
+        if (token !== loadToken || vrm !== model) return;
+
+        mixer = new THREE.AnimationMixer(model.scene);
+        actionsByUrl = new Map();
+        actionWeights = new Map();
+        danceAction = null;
+
+        for (const { url, animation } of items) {
+          const clip = createVRMAnimationClip(animation, model);
+          const action = mixer.clipAction(clip);
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
+          action.play();
+          action.setEffectiveWeight(0);
+          actionsByUrl.set(url, action);
+          actionWeights.set(action, { value: 0, target: 0 });
+        }
+
+        const danceClip = await loadEditedDanceClip(loader, model);
+        if (token !== loadToken || vrm !== model || !danceClip || !mixer) return;
+
+        danceAction = mixer.clipAction(danceClip);
+        danceAction.setLoop(THREE.LoopRepeat, Infinity);
+        danceAction.clampWhenFinished = false;
+        danceAction.timeScale = 0.6;
+        danceAction.play();
+        danceAction.setEffectiveWeight(0);
+        actionsByUrl.set(EDITED_DANCE_URL, danceAction);
+        actionWeights.set(danceAction, { value: 0, target: 0 });
+        syncDanceWeight();
+      } catch (error) {
+        console.error("Не удалось подготовить анимации", error);
+      }
     };
 
     const applyPose = (model: VRM) => {
@@ -785,7 +791,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       vrm = model;
       applyPose(model);
       scene.add(model.scene);
-      setupAnimations(model, token);
+      void setupAnimations(model, token);
     };
 
     const loadModel = (id: string) => {
