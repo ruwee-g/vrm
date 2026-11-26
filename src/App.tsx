@@ -2150,7 +2150,7 @@ function MainApp() {
 
   const renderNavbar = (ids: string[], compact: boolean, side: "A" | "B", order?: number) => (
     <div
-      className={`${compact ? "grid grid-cols-2 gap-2" : "flex flex-col gap-2"} shrink-0 ${groupActive && side === "A" ? "mr-3" : ""}`}
+      className={`${compact ? "grid grid-cols-2 auto-rows-min gap-2" : "flex flex-col gap-2"} shrink-0 self-start ${groupActive && side === "A" ? "mr-3" : ""}`}
       style={order === undefined ? undefined : { order }}
     >
       {BUTTONS.filter((item) => ids.includes(item.id)).map((item) =>
