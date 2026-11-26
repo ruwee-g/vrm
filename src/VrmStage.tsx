@@ -754,7 +754,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
             if (url === DANCE_ANIMATION_URL) {
               action.setLoop(THREE.LoopRepeat, Infinity);
               action.clampWhenFinished = false;
-              action.timeScale = 0.75;
+              action.timeScale = 0.6;
               danceAction = action;
             } else {
               action.setLoop(THREE.LoopOnce, 1);
