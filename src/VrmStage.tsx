@@ -25,10 +25,13 @@ import { IS_PRERELEASE } from "./channel";
 import {
   DANCE_AUDIO_THRESHOLD,
   DANCE_EXPRESSIONS,
-  IDLE_ACTIVITY_ANIMATION_URLS,
   activityScale,
+  clamp01,
+  damp,
   idleDelay,
+  noise1,
   pickIdleActivity,
+  smoothstep,
   type ActivityEvent,
   type ActivityExpression,
 } from "./avatarActivity";
@@ -46,7 +49,6 @@ import {
   type ViewTransform,
 } from "./store";
 
-const IDLE_ANIMATION_URL = "/animations/idle_loop.vrma";
 const REACTION_ANIMATION_URLS = Array.from(
   new Set(
     Object.values(REACTIONS)
@@ -54,10 +56,14 @@ const REACTION_ANIMATION_URLS = Array.from(
       .filter((url): url is string => Boolean(url)),
   ),
 );
-const ALL_ANIMATION_URLS = Array.from(
-  new Set([IDLE_ANIMATION_URL, ...IDLE_ACTIVITY_ANIMATION_URLS, ...REACTION_ANIMATION_URLS]),
-);
+const ALL_ANIMATION_URLS = Array.from(new Set(REACTION_ANIMATION_URLS));
 const ANIMATION_SET_KEY = ALL_ANIMATION_URLS.join("|");
+
+const REACTION_RELEASE = 0.52;
+const EVENT_RELEASE = 0.42;
+const CLIP_FADE = 0.34;
+const POSE_TAU = 0.38;
+const EXPRESSION_TAU = 0.18;
 
 type ActivityState = "reacting" | "thinking" | "listening" | "dancing" | "idle";
 
@@ -117,6 +123,31 @@ const RELAXED_HAND_QUATERNIONS = RELAXED_HAND_ROTATIONS.map(
     quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)),
   }),
 );
+
+const OVERLAY_BONES: VRMHumanBoneName[] = [
+  "hips",
+  "spine",
+  "chest",
+  "upperChest",
+  "neck",
+  "head",
+  "leftShoulder",
+  "rightShoulder",
+  "leftUpperArm",
+  "rightUpperArm",
+  "leftLowerArm",
+  "rightLowerArm",
+  "leftHand",
+  "rightHand",
+  "leftIndexProximal",
+  "rightIndexProximal",
+];
+
+type BoneSnapshot = {
+  bone: THREE.Object3D;
+  quaternion: THREE.Quaternion;
+  position: THREE.Vector3;
+};
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
@@ -254,15 +285,15 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     let vrm: VRM | null = null;
     let loadToken = 0;
     let mixer: THREE.AnimationMixer | null = null;
-    let idleAction: THREE.AnimationAction | null = null;
     let actionsByUrl = new Map<string, THREE.AnimationAction>();
     let actionWeights = new Map<
       THREE.AnimationAction,
       { value: number; target: number }
     >();
-    let clipsByUrl = new Map<string, THREE.AnimationClip>();
+    let boneSnapshots: BoneSnapshot[] = [];
     let reactionId: ReactionId | null = null;
     let reactionRemaining = 0;
+    let reactionReleasing = false;
     let reactionGazeYaw = 0;
     let reactionGazePitch = 0;
     let expressionStates: Array<{ name: string; value: number; target: number }> = [];
@@ -272,18 +303,28 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     let activityState: ActivityState = "idle";
     let activityEvent: ActivityEvent | null = null;
     let activityEventRemaining = 0;
+    let activityEventReleasing = false;
     let idleDirectorNext = 5 + Math.random() * 5;
     let lastActivityId: string | null = null;
     let idleMotionMix = 0;
     let danceMotionMix = 0;
     let dancePhase = 0;
     let breathPhase = 0;
+    let motionTime = 0;
     let danceExpressionsActive = false;
+    let musicActive = false;
+    let musicHold = 0;
     let interactionHoverYaw = 0;
     let interactionHoverUntil = 0;
     let interactionCooldownUntil = 0;
 
-    const blinkState = { next: 2 + Math.random() * 4, open: true, double: false };
+    const blinkState = {
+      next: 2 + Math.random() * 4,
+      phase: "idle" as "idle" | "closing" | "holding" | "opening",
+      time: 0,
+      value: 0,
+      doublePending: false,
+    };
     const gazeState = {
       yaw: 0,
       pitch: 0,
@@ -307,12 +348,46 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       }),
     ).then((items) => items.flatMap((item) => (item ? [item] : [])));
 
-    const playAction = (url: string, restart = false) => {
+    const releaseAction = () => {
+      for (const state of actionWeights.values()) state.target = 0;
+    };
+
+    const playAction = (url: string) => {
       const action = actionsByUrl.get(url);
-      if (!action) return;
-      if (restart) action.reset();
+      if (!action) {
+        releaseAction();
+        return;
+      }
+      action.reset().play();
       for (const [candidate, state] of actionWeights) {
         state.target = candidate === action ? 1 : 0;
+      }
+    };
+
+    const buildBoneSnapshots = (model: VRM) => {
+      boneSnapshots = [];
+      for (const name of OVERLAY_BONES) {
+        const bone = model.humanoid.getRawBoneNode(name);
+        if (!bone) continue;
+        boneSnapshots.push({
+          bone,
+          quaternion: bone.quaternion.clone(),
+          position: bone.position.clone(),
+        });
+      }
+    };
+
+    const captureBones = () => {
+      for (const snapshot of boneSnapshots) {
+        snapshot.quaternion.copy(snapshot.bone.quaternion);
+        snapshot.position.copy(snapshot.bone.position);
+      }
+    };
+
+    const restoreBones = () => {
+      for (const snapshot of boneSnapshots) {
+        snapshot.bone.quaternion.copy(snapshot.quaternion);
+        snapshot.bone.position.copy(snapshot.position);
       }
     };
 
@@ -340,19 +415,25 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     const beginActivityEvent = (event: ActivityEvent) => {
       activityEvent = { ...event, pose: { ...event.pose } };
       activityEventRemaining = event.duration;
+      activityEventReleasing = false;
       lastActivityId = event.id;
       poseTarget = { ...event.pose };
       applyExpressions(event.expressions);
-      if (event.animationUrl) playAction(event.animationUrl, true);
-      else playAction(IDLE_ANIMATION_URL);
+    };
+
+    const releaseActivityEvent = () => {
+      if (!activityEvent || activityEventReleasing) return;
+      activityEventReleasing = true;
+      poseTarget = { ...NEUTRAL_POSE };
+      clearExpressions();
     };
 
     const endActivityEvent = () => {
       activityEvent = null;
       activityEventRemaining = 0;
+      activityEventReleasing = false;
       poseTarget = { ...NEUTRAL_POSE };
       clearExpressions();
-      playAction(IDLE_ANIMATION_URL);
       const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
       idleDirectorNext = idleDelay(settings.idleIntensity);
     };
@@ -360,35 +441,50 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     const updateFace = (model: VRM, delta: number) => {
       const manager = model.expressionManager;
       if (manager) {
-        blinkState.next -= delta;
-        if (blinkState.next <= 0) {
-          if (blinkState.open) {
-            manager.setValue("blink", 1);
-            blinkState.open = false;
-            blinkState.next = 0.09;
+        if (blinkState.phase === "idle") {
+          blinkState.next -= delta;
+          if (blinkState.next <= 0) {
+            blinkState.phase = "closing";
+            blinkState.time = 0;
+          }
+        } else {
+          blinkState.time += delta;
+          if (blinkState.phase === "closing") {
+            blinkState.value = smoothstep(0, 0.055, blinkState.time);
+            if (blinkState.time >= 0.055) {
+              blinkState.phase = "holding";
+              blinkState.time = 0;
+            }
+          } else if (blinkState.phase === "holding") {
+            blinkState.value = 1;
+            if (blinkState.time >= 0.03) {
+              blinkState.phase = "opening";
+              blinkState.time = 0;
+            }
           } else {
-            manager.setValue("blink", 0);
-            blinkState.open = true;
-            if (blinkState.double) {
-              blinkState.double = false;
-              blinkState.next = 0.14;
-            } else {
-              blinkState.next = 2 + Math.random() * 4;
-              if (Math.random() < 0.12) blinkState.double = true;
+            blinkState.value = 1 - smoothstep(0, 0.1, blinkState.time);
+            if (blinkState.time >= 0.1) {
+              blinkState.value = 0;
+              blinkState.phase = "idle";
+              blinkState.next = blinkState.doublePending ? 0.16 : 2.2 + Math.random() * 4;
+              blinkState.doublePending = blinkState.doublePending
+                ? false
+                : Math.random() < 0.14;
             }
           }
         }
+        manager.setValue("blink", blinkState.value);
       }
 
       const lookAt = model.lookAt;
       if (lookAt) {
         lookAt.autoUpdate = false;
         gazeState.next -= delta;
-        if (reactionId) {
+        if (reactionId && !reactionReleasing) {
           gazeState.targetYaw = reactionGazeYaw;
           gazeState.targetPitch = reactionGazePitch;
           gazeState.next = 0.5;
-        } else if (activityEvent) {
+        } else if (activityEvent && !activityEventReleasing) {
           gazeState.targetYaw = activityEvent.gazeYaw;
           gazeState.targetPitch = activityEvent.gazePitch;
           gazeState.next = 0.4;
@@ -405,13 +501,12 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           gazeState.targetPitch = -2;
           gazeState.next = 0.4;
         } else if (gazeState.next <= 0) {
-          gazeState.targetYaw = (Math.random() - 0.5) * 24;
-          gazeState.targetPitch = (Math.random() - 0.5) * 9;
-          gazeState.next = 2.5 + Math.random() * 4;
+          gazeState.targetYaw = (Math.random() - 0.5) * 26;
+          gazeState.targetPitch = (Math.random() - 0.5) * 10;
+          gazeState.next = 2.5 + Math.random() * 4.5;
         }
-        const ease = Math.min(1, delta * 1.5);
-        gazeState.yaw += (gazeState.targetYaw - gazeState.yaw) * ease;
-        gazeState.pitch += (gazeState.targetPitch - gazeState.pitch) * ease;
+        gazeState.yaw = damp(gazeState.yaw, gazeState.targetYaw, 0.26, delta);
+        gazeState.pitch = damp(gazeState.pitch, gazeState.targetPitch, 0.26, delta);
         lookAt.yaw = gazeState.yaw;
         lookAt.pitch = gazeState.pitch;
       }
@@ -425,7 +520,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       }
     };
 
-    const addReactionRotation = (
+    const addOverlayRotation = (
       model: VRM,
       name: VRMHumanBoneName,
       x: number,
@@ -439,7 +534,21 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       bone.quaternion.multiply(reactionQuat);
     };
 
-    const applyReactionPose = (model: VRM) => {
+    const addOverlayOffset = (
+      model: VRM,
+      name: VRMHumanBoneName,
+      x: number,
+      y: number,
+      z: number,
+    ) => {
+      const bone = model.humanoid.getRawBoneNode(name);
+      if (!bone) return;
+      bone.position.x += x;
+      bone.position.y += y;
+      bone.position.z += z;
+    };
+
+    const applyStatePose = (model: VRM) => {
       const poseIdle =
         Math.abs(poseCurrent.headPitch) < 0.001 &&
         Math.abs(poseCurrent.headRoll) < 0.001 &&
@@ -448,88 +557,116 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       if (poseIdle) return;
 
       const nod = Math.sin(posePhase * 7) * poseCurrent.nodAmplitude;
-      addReactionRotation(
+      addOverlayRotation(
         model,
         "head",
         poseCurrent.headPitch + nod,
         0,
         poseCurrent.headRoll,
       );
-      addReactionRotation(model, "chest", poseCurrent.chestPitch, 0, 0);
+      addOverlayRotation(model, "chest", poseCurrent.chestPitch, 0, 0);
     };
 
-    const addMotionRotation = (
+    const applyProceduralMotion = (
       model: VRM,
-      name: VRMHumanBoneName,
-      x: number,
-      y: number,
-      z: number,
+      delta: number,
+      settings: CharacterActivitySettings,
     ) => {
-      const bone = model.humanoid.getRawBoneNode(name);
-      if (!bone) return;
-      reactionEuler.set(x, y, z);
-      reactionQuat.setFromEuler(reactionEuler);
-      bone.quaternion.multiply(reactionQuat);
-    };
-
-    const applyProceduralMotion = (model: VRM, delta: number) => {
-      const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
       const scale = activityScale(settings.idleIntensity);
-      const motionEase = 1 - Math.exp(-delta / 0.35);
-      const idleTarget = activityState === "idle" && !reactionId ? 1 : 0;
-      const danceTarget = activityState === "dancing" && !reactionId ? 1 : 0;
-      idleMotionMix += (idleTarget - idleMotionMix) * motionEase;
-      danceMotionMix += (danceTarget - danceMotionMix) * motionEase;
+      motionTime += delta;
+      idleMotionMix = damp(
+        idleMotionMix,
+        activityState === "idle" && !reactionId ? 1 : 0,
+        0.45,
+        delta,
+      );
+      const danceTarget =
+        activityState === "dancing" && settings.musicReactivity && !reactionId ? 1 : 0;
+      danceMotionMix = damp(danceMotionMix, danceTarget, 0.4, delta);
 
       if (idleMotionMix > 0.01) {
-        breathPhase += delta * 0.9;
-        const breath = Math.sin(breathPhase) * 0.014 * scale * idleMotionMix;
-        const sway = Math.sin(breathPhase * 0.37) * 0.02 * scale * idleMotionMix;
-        addMotionRotation(model, "spine", breath * 0.6, 0, sway);
-        addMotionRotation(model, "chest", breath, 0, sway * 0.4);
-        addMotionRotation(
+        breathPhase += delta * 1.25;
+        const breath =
+          (Math.sin(breathPhase) * 0.62 + Math.sin(breathPhase * 2 + 0.8) * 0.14) *
+          scale *
+          idleMotionMix;
+        const shift = noise1(motionTime * 0.19) * 0.026 * scale * idleMotionMix;
+        const drift = noise1(motionTime * 0.11 + 31) * 0.018 * scale * idleMotionMix;
+        addOverlayRotation(model, "hips", 0, shift * 0.5, shift);
+        addOverlayRotation(model, "spine", breath * 0.5, shift * 0.35, shift * 0.6);
+        addOverlayRotation(model, "chest", breath, 0, shift * 0.25 + drift * 0.3);
+        addOverlayRotation(model, "neck", -breath * 0.25, 0, -shift * 0.2);
+        addOverlayRotation(
           model,
           "head",
-          Math.sin(breathPhase * 0.53) * 0.009 * scale * idleMotionMix,
+          breath * 0.3 + noise1(motionTime * 0.7 + 7) * 0.008 * scale * idleMotionMix,
           0,
-          Math.sin(breathPhase * 0.29) * 0.012 * scale * idleMotionMix,
+          drift,
         );
+        const finger = noise1(motionTime * 0.55 + 19) * 0.018 * scale * idleMotionMix;
+        addOverlayRotation(model, "leftIndexProximal", 0, 0, finger);
+        addOverlayRotation(model, "rightIndexProximal", 0, 0, -finger);
       }
 
       if (danceMotionMix > 0.01) {
-        dancePhase += delta * 5.4;
+        dancePhase += delta * (4.9 + clamp01(audioLevelRef.current) * 1.2);
         const influence = danceMotionMix * scale;
         const beat = Math.sin(dancePhase);
-        const side = Math.sin(dancePhase * 0.5);
-        addMotionRotation(model, "hips", 0, side * 0.13 * influence, beat * 0.08 * influence);
-        addMotionRotation(
+        const delayed = Math.sin(dancePhase - 0.5);
+        const side =
+          noise1(dancePhase * 0.18) * 0.6 + Math.sin(dancePhase * 0.5) * 0.4;
+        addOverlayOffset(model, "hips", 0, beat * 0.012 * influence, 0);
+        addOverlayRotation(
+          model,
+          "hips",
+          0.01 * Math.cos(dancePhase) * influence,
+          side * 0.14 * influence,
+          beat * 0.08 * influence,
+        );
+        addOverlayRotation(
           model,
           "spine",
-          0.025 * Math.cos(dancePhase) * influence,
+          0.02 * Math.cos(dancePhase) * influence,
           beat * 0.07 * influence,
           -side * 0.07 * influence,
         );
-        addMotionRotation(model, "chest", 0, 0, beat * 0.055 * influence);
-        addMotionRotation(
+        addOverlayRotation(model, "chest", 0, 0, beat * 0.05 * influence);
+        addOverlayRotation(
           model,
-          "head",
-          Math.sin(dancePhase * 2) * 0.03 * influence,
-          side * 0.055 * influence,
-          beat * 0.065 * influence,
+          "leftShoulder",
+          delayed * 0.12 * influence,
+          0,
+          -0.05 * influence,
         );
-        addMotionRotation(
+        addOverlayRotation(
+          model,
+          "rightShoulder",
+          -delayed * 0.12 * influence,
+          0,
+          0.05 * influence,
+        );
+        addOverlayRotation(model, "leftUpperArm", beat * 0.42 * influence, 0, -0.06 * influence);
+        addOverlayRotation(model, "rightUpperArm", -beat * 0.42 * influence, 0, 0.06 * influence);
+        addOverlayRotation(
           model,
           "leftLowerArm",
-          beat * 0.38 * influence,
+          delayed * 0.32 * influence,
           0,
-          -0.16 * influence,
+          -0.12 * influence,
         );
-        addMotionRotation(
+        addOverlayRotation(
           model,
           "rightLowerArm",
-          -beat * 0.38 * influence,
+          -delayed * 0.32 * influence,
           0,
-          0.16 * influence,
+          0.12 * influence,
+        );
+        addOverlayRotation(
+          model,
+          "head",
+          Math.sin(dancePhase * 2) * 0.025 * influence,
+          side * 0.045 * influence,
+          delayed * 0.06 * influence,
         );
       }
     };
@@ -537,9 +674,8 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     const updateExpressions = (model: VRM, delta: number) => {
       const manager = model.expressionManager;
       if (!manager || expressionStates.length === 0) return;
-      const ease = Math.min(1, delta * 6);
       for (const state of expressionStates) {
-        state.value += (state.target - state.value) * ease;
+        state.value = damp(state.value, state.target, EXPRESSION_TAU, delta);
         manager.setValue(state.name, state.value);
       }
       if (
@@ -552,17 +688,19 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     };
 
     const playReaction = (id: ReactionId) => {
-      if (!mixer || !idleAction || !vrm) return;
+      if (!vrm) return;
       const config = REACTIONS[id] ?? REACTIONS.neutral;
       const appliedId = REACTIONS[id] ? id : "neutral";
 
       reactionId = appliedId;
       reactionRemaining = config.duration;
+      reactionReleasing = false;
       reactionGazeYaw = config.gazeYaw;
       reactionGazePitch = config.gazePitch;
       poseTarget = { ...config.pose };
       activityEvent = null;
       activityEventRemaining = 0;
+      activityEventReleasing = false;
       activityState = "reacting";
       danceExpressionsActive = false;
 
@@ -570,14 +708,14 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         config.expressions.map((name) => ({ name, weight: config.expressionWeight })),
       );
 
-      if (config.animationUrl) playAction(config.animationUrl, true);
-      else playAction(IDLE_ANIMATION_URL);
+      if (config.animationUrl) playAction(config.animationUrl);
+      else releaseAction();
     };
     reactRef.current = playReaction;
 
     interactRef.current = (kind) => {
       const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
-      if (!settings.interactionResponses || !vrm || !idleAction) return;
+      if (!settings.interactionResponses || !vrm) return;
       const now = performance.now();
       if (kind === "leave") {
         interactionHoverUntil = 0;
@@ -598,24 +736,20 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     const setupAnimations = (model: VRM, token: number) => {
       void animationsPromise
         .then((items) => {
-          if (token !== loadToken || vrm !== model || items.length === 0) return;
+          if (token !== loadToken || vrm !== model) return;
           mixer = new THREE.AnimationMixer(model.scene);
-          clipsByUrl = new Map();
           actionsByUrl = new Map();
           actionWeights = new Map();
           for (const { url, animation } of items) {
             const clip = createVRMAnimationClip(animation, model);
-            clipsByUrl.set(url, clip);
             const action = mixer.clipAction(clip);
-            action.setLoop(THREE.LoopRepeat, Infinity).play();
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+            action.play();
+            action.setEffectiveWeight(0);
             actionsByUrl.set(url, action);
-            actionWeights.set(action, {
-              value: url === IDLE_ANIMATION_URL ? 1 : 0,
-              target: url === IDLE_ANIMATION_URL ? 1 : 0,
-            });
+            actionWeights.set(action, { value: 0, target: 0 });
           }
-          idleAction = actionsByUrl.get(IDLE_ANIMATION_URL) ?? null;
-          if (!idleAction) return;
         })
         .catch((error) => console.error("Не удалось подготовить анимации", error));
     };
@@ -634,6 +768,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       const model = gltf.userData.vrm as VRM;
       vrm = model;
       applyPose(model);
+      buildBoneSnapshots(model);
       scene.add(model.scene);
       setupAnimations(model, token);
     };
@@ -649,12 +784,12 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         scene.remove(vrm.scene);
         vrm = null;
       }
-      idleAction = null;
+      boneSnapshots = [];
       actionsByUrl = new Map();
       actionWeights = new Map();
-      clipsByUrl = new Map();
       reactionId = null;
       reactionRemaining = 0;
+      reactionReleasing = false;
       reactionGazeYaw = 0;
       reactionGazePitch = 0;
       expressionStates = [];
@@ -664,18 +799,24 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       activityState = "idle";
       activityEvent = null;
       activityEventRemaining = 0;
+      activityEventReleasing = false;
       idleDirectorNext = 5 + Math.random() * 5;
       lastActivityId = null;
       idleMotionMix = 0;
       danceMotionMix = 0;
       dancePhase = 0;
+      motionTime = 0;
       danceExpressionsActive = false;
+      musicActive = false;
+      musicHold = 0;
       interactionHoverYaw = 0;
       interactionHoverUntil = 0;
       interactionCooldownUntil = 0;
       blinkState.next = 2 + Math.random() * 4;
-      blinkState.open = true;
-      blinkState.double = false;
+      blinkState.phase = "idle";
+      blinkState.time = 0;
+      blinkState.value = 0;
+      blinkState.doublePending = false;
       gazeState.next = 2 + Math.random() * 3;
 
       if (!IS_PRERELEASE && id === DEFAULT_MODEL_ID) {
@@ -727,20 +868,25 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       if (document.hidden || !stageVisibleRef.current || avatarVisibleRef.current) return;
 
       const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
+      const audioLevel = clamp01(audioLevelRef.current);
+      musicHold = clamp(
+        musicHold + (audioLevel >= DANCE_AUDIO_THRESHOLD ? delta : -delta),
+        -0.8,
+        0.4,
+      );
+      if (!musicActive && musicHold >= 0.4) musicActive = true;
+      if (musicActive && musicHold <= -0.8) musicActive = false;
+
       const previousState = activityState;
       let nextState: ActivityState;
       if (reactionId) nextState = "reacting";
       else if (generatingRef.current) nextState = "thinking";
       else if (listeningRef.current) nextState = "listening";
-      else if (
-        settings.musicReactivity &&
-        audioLevelRef.current >= DANCE_AUDIO_THRESHOLD
-      )
-        nextState = "dancing";
+      else if (settings.musicReactivity && musicActive) nextState = "dancing";
       else nextState = "idle";
 
       if (nextState !== activityState) {
-        if (activityEvent && nextState !== "idle") endActivityEvent();
+        if (activityEvent && nextState !== "idle") releaseActivityEvent();
         if (activityState === "dancing" && nextState !== "dancing" && danceExpressionsActive) {
           clearExpressions();
           danceExpressionsActive = false;
@@ -755,10 +901,13 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         activityState = nextState;
       }
 
-      if (mixer && idleAction) {
+      if (mixer) {
         if (activityEvent) {
           activityEventRemaining -= delta;
-          if (activityEventRemaining <= 0 && !reactionId) endActivityEvent();
+          if (!activityEventReleasing && activityEventRemaining <= EVENT_RELEASE) {
+            releaseActivityEvent();
+          }
+          if (activityEventRemaining <= 0) endActivityEvent();
         } else if (activityState === "idle" && settings.idleActivity) {
           idleDirectorNext -= delta;
           if (idleDirectorNext <= 0) {
@@ -776,7 +925,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           poseTarget = { ...targetPose };
         }
 
-        const weightEase = 1 - Math.exp(-delta / 0.3);
+        const weightEase = 1 - Math.exp(-delta / CLIP_FADE);
         for (const [action, state] of actionWeights) {
           state.value += (state.target - state.value) * weightEase;
           if (state.target === 0 && state.value < 0.001) state.value = 0;
@@ -786,40 +935,48 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
 
         if (reactionId) {
           reactionRemaining -= delta;
+          if (!reactionReleasing && reactionRemaining <= REACTION_RELEASE) {
+            reactionReleasing = true;
+            poseTarget = { ...NEUTRAL_POSE };
+            clearExpressions();
+            releaseAction();
+          }
           if (reactionRemaining <= 0) {
             reactionId = null;
-            reactionGazeYaw = 0;
+                  reactionGazeYaw = 0;
             reactionGazePitch = 0;
             poseTarget = { ...NEUTRAL_POSE };
             clearExpressions();
-            playAction(IDLE_ANIMATION_URL);
+            releaseAction();
             idleDirectorNext = Math.max(idleDirectorNext, 2 + Math.random() * 3);
           }
         }
 
-        const poseEase = 1 - Math.exp(-delta / 0.22);
-        poseCurrent.headPitch +=
-          (poseTarget.headPitch - poseCurrent.headPitch) * poseEase;
-        poseCurrent.headRoll +=
-          (poseTarget.headRoll - poseCurrent.headRoll) * poseEase;
-        poseCurrent.chestPitch +=
-          (poseTarget.chestPitch - poseCurrent.chestPitch) * poseEase;
-        poseCurrent.nodAmplitude +=
-          (poseTarget.nodAmplitude - poseCurrent.nodAmplitude) * poseEase;
+        poseCurrent.headPitch = damp(poseCurrent.headPitch, poseTarget.headPitch, POSE_TAU, delta);
+        poseCurrent.headRoll = damp(poseCurrent.headRoll, poseTarget.headRoll, POSE_TAU, delta);
+        poseCurrent.chestPitch = damp(poseCurrent.chestPitch, poseTarget.chestPitch, POSE_TAU, delta);
+        poseCurrent.nodAmplitude = damp(
+          poseCurrent.nodAmplitude,
+          poseTarget.nodAmplitude,
+          POSE_TAU,
+          delta,
+        );
         posePhase += delta;
       }
 
-      if (vrm && idleAction) {
-        updateExpressions(vrm, delta);
-      }
+      if (vrm) updateExpressions(vrm, delta);
       if (vrm) updateFace(vrm, delta);
       vrm?.update(delta);
-      if (vrm && idleAction) {
-        applyProceduralMotion(vrm, delta);
-        applyReactionPose(vrm);
+      if (vrm && boneSnapshots.length > 0) {
+        captureBones();
+        applyProceduralMotion(vrm, delta, settings);
+        applyStatePose(vrm);
         relaxHands(vrm);
+        renderer.render(scene, camera);
+        restoreBones();
+      } else {
+        renderer.render(scene, camera);
       }
-      renderer.render(scene, camera);
     };
     animate();
 
