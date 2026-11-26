@@ -587,15 +587,15 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       if (idleMotionMix > 0.01) {
         breathPhase += delta * 1.25;
         const breath =
-          (Math.sin(breathPhase) * 0.62 + Math.sin(breathPhase * 2 + 0.8) * 0.14) *
+          (Math.sin(breathPhase) * 0.012 + Math.sin(breathPhase * 2 + 0.8) * 0.003) *
           scale *
           idleMotionMix;
         const shift = noise1(motionTime * 0.19) * 0.026 * scale * idleMotionMix;
         const drift = noise1(motionTime * 0.11 + 31) * 0.018 * scale * idleMotionMix;
         addOverlayRotation(model, "hips", 0, shift * 0.5, shift);
-        addOverlayRotation(model, "spine", breath * 0.5, shift * 0.35, shift * 0.6);
+        addOverlayRotation(model, "spine", breath * 0.6, shift * 0.35, shift * 0.6);
         addOverlayRotation(model, "chest", breath, 0, shift * 0.25 + drift * 0.3);
-        addOverlayRotation(model, "neck", -breath * 0.25, 0, -shift * 0.2);
+        addOverlayRotation(model, "neck", -breath * 0.2, 0, -shift * 0.2);
         addOverlayRotation(
           model,
           "head",
