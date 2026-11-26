@@ -124,31 +124,6 @@ const RELAXED_HAND_QUATERNIONS = RELAXED_HAND_ROTATIONS.map(
   }),
 );
 
-const OVERLAY_BONES: VRMHumanBoneName[] = [
-  "hips",
-  "spine",
-  "chest",
-  "upperChest",
-  "neck",
-  "head",
-  "leftShoulder",
-  "rightShoulder",
-  "leftUpperArm",
-  "rightUpperArm",
-  "leftLowerArm",
-  "rightLowerArm",
-  "leftHand",
-  "rightHand",
-  "leftIndexProximal",
-  "rightIndexProximal",
-];
-
-type BoneSnapshot = {
-  bone: THREE.Object3D;
-  quaternion: THREE.Quaternion;
-  position: THREE.Vector3;
-};
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -290,7 +265,6 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       THREE.AnimationAction,
       { value: number; target: number }
     >();
-    let boneSnapshots: BoneSnapshot[] = [];
     let reactionId: ReactionId | null = null;
     let reactionRemaining = 0;
     let reactionReleasing = false;
@@ -361,33 +335,6 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       action.reset().play();
       for (const [candidate, state] of actionWeights) {
         state.target = candidate === action ? 1 : 0;
-      }
-    };
-
-    const buildBoneSnapshots = (model: VRM) => {
-      boneSnapshots = [];
-      for (const name of OVERLAY_BONES) {
-        const bone = model.humanoid.getRawBoneNode(name);
-        if (!bone) continue;
-        boneSnapshots.push({
-          bone,
-          quaternion: bone.quaternion.clone(),
-          position: bone.position.clone(),
-        });
-      }
-    };
-
-    const captureBones = () => {
-      for (const snapshot of boneSnapshots) {
-        snapshot.quaternion.copy(snapshot.bone.quaternion);
-        snapshot.position.copy(snapshot.bone.position);
-      }
-    };
-
-    const restoreBones = () => {
-      for (const snapshot of boneSnapshots) {
-        snapshot.bone.quaternion.copy(snapshot.quaternion);
-        snapshot.bone.position.copy(snapshot.position);
       }
     };
 
@@ -768,7 +715,6 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       const model = gltf.userData.vrm as VRM;
       vrm = model;
       applyPose(model);
-      buildBoneSnapshots(model);
       scene.add(model.scene);
       setupAnimations(model, token);
     };
@@ -784,7 +730,6 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
         scene.remove(vrm.scene);
         vrm = null;
       }
-      boneSnapshots = [];
       actionsByUrl = new Map();
       actionWeights = new Map();
       reactionId = null;
@@ -967,16 +912,12 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       if (vrm) updateExpressions(vrm, delta);
       if (vrm) updateFace(vrm, delta);
       vrm?.update(delta);
-      if (vrm && boneSnapshots.length > 0) {
-        captureBones();
+      if (vrm) {
         applyProceduralMotion(vrm, delta, settings);
         applyStatePose(vrm);
         relaxHands(vrm);
-        renderer.render(scene, camera);
-        restoreBones();
-      } else {
-        renderer.render(scene, camera);
       }
+      renderer.render(scene, camera);
     };
     animate();
 
