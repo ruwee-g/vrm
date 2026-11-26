@@ -13,5 +13,9 @@
     "Haruhi_winter.vrm"
   ],
   "avatarFile": "avatar.jpg",
-  "realTime": true
+  "realTime": true,
+  "idleActivity": true,
+  "idleIntensity": "medium",
+  "musicReactivity": true,
+  "interactionResponses": true
 }

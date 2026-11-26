@@ -23,6 +23,16 @@ import {
 } from "@pixiv/three-vrm-animation";
 import { IS_PRERELEASE } from "./channel";
 import {
+  DANCE_AUDIO_THRESHOLD,
+  DANCE_EXPRESSIONS,
+  IDLE_ACTIVITY_ANIMATION_URLS,
+  activityScale,
+  idleDelay,
+  pickIdleActivity,
+  type ActivityEvent,
+  type ActivityExpression,
+} from "./avatarActivity";
+import {
   NEUTRAL_POSE,
   REACTIONS,
   type ReactionId,
@@ -32,6 +42,7 @@ import {
   DEFAULT_MODEL_ID,
   base64ToArrayBuffer,
   readVrmModelBase64,
+  type CharacterActivitySettings,
   type ViewTransform,
 } from "./store";
 
@@ -43,8 +54,33 @@ const REACTION_ANIMATION_URLS = Array.from(
       .filter((url): url is string => Boolean(url)),
   ),
 );
-const ALL_ANIMATION_URLS = [IDLE_ANIMATION_URL, ...REACTION_ANIMATION_URLS];
+const ALL_ANIMATION_URLS = Array.from(
+  new Set([IDLE_ANIMATION_URL, ...IDLE_ACTIVITY_ANIMATION_URLS, ...REACTION_ANIMATION_URLS]),
+);
 const ANIMATION_SET_KEY = ALL_ANIMATION_URLS.join("|");
+
+type ActivityState = "reacting" | "thinking" | "listening" | "dancing" | "idle";
+
+const THINKING_POSE: ReactionPose = {
+  headPitch: -0.05,
+  headRoll: 0.045,
+  chestPitch: -0.01,
+  nodAmplitude: 0,
+};
+
+const LISTENING_POSE: ReactionPose = {
+  headPitch: 0.015,
+  headRoll: -0.02,
+  chestPitch: 0,
+  nodAmplitude: 0,
+};
+
+const DEFAULT_ACTIVITY_SETTINGS: CharacterActivitySettings = {
+  idleActivity: true,
+  idleIntensity: "medium",
+  musicReactivity: true,
+  interactionResponses: true,
+};
 
 const RELAXED_HAND_ROTATIONS: Array<[VRMHumanBoneName, number, number, number]> = [
   ["leftHand", 0.08, 0, 0],
@@ -103,6 +139,10 @@ type VrmStageProps = {
   avatarName: string;
   avatarVisible: boolean;
   offline: boolean;
+  generating?: boolean;
+  listening?: boolean;
+  audioLevel?: number;
+  activitySettings?: CharacterActivitySettings;
   micStatus?: ReactNode;
   showResetButton?: boolean;
   onResetView?: () => void;
@@ -128,6 +168,10 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     avatarName,
     avatarVisible,
     offline,
+    generating = false,
+    listening = false,
+    audioLevel = 0,
+    activitySettings,
     micStatus,
     showResetButton,
     onResetView,
@@ -143,6 +187,21 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
   const loadModelRef = useRef<((id: string) => void) | null>(null);
   const applyViewRef = useRef<((transform: ViewTransform) => void) | null>(null);
   const reactRef = useRef<((id: ReactionId) => void) | null>(null);
+  const interactRef = useRef<((kind: "hover" | "leave" | "tap") => void) | null>(null);
+  const generatingRef = useRef(generating);
+  const listeningRef = useRef(listening);
+  const audioLevelRef = useRef(audioLevel);
+  const activitySettingsRef = useRef(activitySettings);
+  const stageVisibleRef = useRef(visible);
+  const avatarVisibleRef = useRef(avatarVisible);
+
+  stageVisibleRef.current = visible;
+  avatarVisibleRef.current = avatarVisible;
+  generatingRef.current = generating;
+  listeningRef.current = listening;
+  audioLevelRef.current = audioLevel;
+  activitySettingsRef.current = activitySettings;
+
   const viewDragRef = useRef<{
     pointerId: number;
     pan: boolean;
@@ -210,6 +269,19 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     let poseCurrent: ReactionPose = { ...NEUTRAL_POSE };
     let poseTarget: ReactionPose = { ...NEUTRAL_POSE };
     let posePhase = 0;
+    let activityState: ActivityState = "idle";
+    let activityEvent: ActivityEvent | null = null;
+    let activityEventRemaining = 0;
+    let idleDirectorNext = 5 + Math.random() * 5;
+    let lastActivityId: string | null = null;
+    let idleMotionMix = 0;
+    let danceMotionMix = 0;
+    let dancePhase = 0;
+    let breathPhase = 0;
+    let danceExpressionsActive = false;
+    let interactionHoverYaw = 0;
+    let interactionHoverUntil = 0;
+    let interactionCooldownUntil = 0;
 
     const blinkState = { next: 2 + Math.random() * 4, open: true, double: false };
     const gazeState = {
@@ -244,6 +316,47 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       }
     };
 
+    const applyExpressions = (entries: ActivityExpression[]) => {
+      const manager = vrm?.expressionManager;
+      const nextStates = new Map<string, { name: string; value: number; target: number }>();
+      for (const state of expressionStates) {
+        nextStates.set(state.name, { ...state, target: 0 });
+      }
+      for (const entry of entries) {
+        const existing = nextStates.get(entry.name);
+        nextStates.set(entry.name, {
+          name: entry.name,
+          value: existing?.value ?? manager?.getValue(entry.name) ?? 0,
+          target: entry.weight,
+        });
+      }
+      expressionStates = Array.from(nextStates.values());
+    };
+
+    const clearExpressions = () => {
+      for (const state of expressionStates) state.target = 0;
+    };
+
+    const beginActivityEvent = (event: ActivityEvent) => {
+      activityEvent = { ...event, pose: { ...event.pose } };
+      activityEventRemaining = event.duration;
+      lastActivityId = event.id;
+      poseTarget = { ...event.pose };
+      applyExpressions(event.expressions);
+      if (event.animationUrl) playAction(event.animationUrl, true);
+      else playAction(IDLE_ANIMATION_URL);
+    };
+
+    const endActivityEvent = () => {
+      activityEvent = null;
+      activityEventRemaining = 0;
+      poseTarget = { ...NEUTRAL_POSE };
+      clearExpressions();
+      playAction(IDLE_ANIMATION_URL);
+      const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
+      idleDirectorNext = idleDelay(settings.idleIntensity);
+    };
+
     const updateFace = (model: VRM, delta: number) => {
       const manager = model.expressionManager;
       if (manager) {
@@ -275,6 +388,22 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           gazeState.targetYaw = reactionGazeYaw;
           gazeState.targetPitch = reactionGazePitch;
           gazeState.next = 0.5;
+        } else if (activityEvent) {
+          gazeState.targetYaw = activityEvent.gazeYaw;
+          gazeState.targetPitch = activityEvent.gazePitch;
+          gazeState.next = 0.4;
+        } else if (activityState === "thinking") {
+          gazeState.targetYaw = -8;
+          gazeState.targetPitch = -7;
+          gazeState.next = 0.5;
+        } else if (activityState === "listening") {
+          gazeState.targetYaw = 0;
+          gazeState.targetPitch = 0;
+          gazeState.next = 0.5;
+        } else if (interactionHoverUntil > performance.now()) {
+          gazeState.targetYaw = interactionHoverYaw;
+          gazeState.targetPitch = -2;
+          gazeState.next = 0.4;
         } else if (gazeState.next <= 0) {
           gazeState.targetYaw = (Math.random() - 0.5) * 24;
           gazeState.targetPitch = (Math.random() - 0.5) * 9;
@@ -329,6 +458,82 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       addReactionRotation(model, "chest", poseCurrent.chestPitch, 0, 0);
     };
 
+    const addMotionRotation = (
+      model: VRM,
+      name: VRMHumanBoneName,
+      x: number,
+      y: number,
+      z: number,
+    ) => {
+      const bone = model.humanoid.getRawBoneNode(name);
+      if (!bone) return;
+      reactionEuler.set(x, y, z);
+      reactionQuat.setFromEuler(reactionEuler);
+      bone.quaternion.multiply(reactionQuat);
+    };
+
+    const applyProceduralMotion = (model: VRM, delta: number) => {
+      const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
+      const scale = activityScale(settings.idleIntensity);
+      const motionEase = 1 - Math.exp(-delta / 0.35);
+      const idleTarget = activityState === "idle" && !reactionId ? 1 : 0;
+      const danceTarget = activityState === "dancing" && !reactionId ? 1 : 0;
+      idleMotionMix += (idleTarget - idleMotionMix) * motionEase;
+      danceMotionMix += (danceTarget - danceMotionMix) * motionEase;
+
+      if (idleMotionMix > 0.01) {
+        breathPhase += delta * 0.9;
+        const breath = Math.sin(breathPhase) * 0.014 * scale * idleMotionMix;
+        const sway = Math.sin(breathPhase * 0.37) * 0.02 * scale * idleMotionMix;
+        addMotionRotation(model, "spine", breath * 0.6, 0, sway);
+        addMotionRotation(model, "chest", breath, 0, sway * 0.4);
+        addMotionRotation(
+          model,
+          "head",
+          Math.sin(breathPhase * 0.53) * 0.009 * scale * idleMotionMix,
+          0,
+          Math.sin(breathPhase * 0.29) * 0.012 * scale * idleMotionMix,
+        );
+      }
+
+      if (danceMotionMix > 0.01) {
+        dancePhase += delta * 5.4;
+        const influence = danceMotionMix * scale;
+        const beat = Math.sin(dancePhase);
+        const side = Math.sin(dancePhase * 0.5);
+        addMotionRotation(model, "hips", 0, side * 0.13 * influence, beat * 0.08 * influence);
+        addMotionRotation(
+          model,
+          "spine",
+          0.025 * Math.cos(dancePhase) * influence,
+          beat * 0.07 * influence,
+          -side * 0.07 * influence,
+        );
+        addMotionRotation(model, "chest", 0, 0, beat * 0.055 * influence);
+        addMotionRotation(
+          model,
+          "head",
+          Math.sin(dancePhase * 2) * 0.03 * influence,
+          side * 0.055 * influence,
+          beat * 0.065 * influence,
+        );
+        addMotionRotation(
+          model,
+          "leftLowerArm",
+          beat * 0.38 * influence,
+          0,
+          -0.16 * influence,
+        );
+        addMotionRotation(
+          model,
+          "rightLowerArm",
+          -beat * 0.38 * influence,
+          0,
+          0.16 * influence,
+        );
+      }
+    };
+
     const updateExpressions = (model: VRM, delta: number) => {
       const manager = model.expressionManager;
       if (!manager || expressionStates.length === 0) return;
@@ -356,26 +561,39 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       reactionGazeYaw = config.gazeYaw;
       reactionGazePitch = config.gazePitch;
       poseTarget = { ...config.pose };
+      activityEvent = null;
+      activityEventRemaining = 0;
+      activityState = "reacting";
+      danceExpressionsActive = false;
 
-      const manager = vrm.expressionManager;
-      const nextStates = new Map<string, { name: string; value: number; target: number }>();
-      for (const state of expressionStates) {
-        nextStates.set(state.name, { ...state, target: 0 });
-      }
-      for (const name of config.expressions) {
-        const existing = nextStates.get(name);
-        nextStates.set(name, {
-          name,
-          value: existing?.value ?? manager?.getValue(name) ?? 0,
-          target: config.expressionWeight,
-        });
-      }
-      expressionStates = Array.from(nextStates.values());
+      applyExpressions(
+        config.expressions.map((name) => ({ name, weight: config.expressionWeight })),
+      );
 
       if (config.animationUrl) playAction(config.animationUrl, true);
       else playAction(IDLE_ANIMATION_URL);
     };
     reactRef.current = playReaction;
+
+    interactRef.current = (kind) => {
+      const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
+      if (!settings.interactionResponses || !vrm || !idleAction) return;
+      const now = performance.now();
+      if (kind === "leave") {
+        interactionHoverUntil = 0;
+        interactionHoverYaw = 0;
+        return;
+      }
+      if (now < interactionCooldownUntil) return;
+      if (kind === "hover") {
+        interactionHoverYaw = 13;
+        interactionHoverUntil = now + 1500;
+        interactionCooldownUntil = now + 2600;
+      } else {
+        interactionCooldownUntil = now + 2400;
+        playReaction(Math.random() < 0.5 ? "happy" : "wave");
+      }
+    };
 
     const setupAnimations = (model: VRM, token: number) => {
       void animationsPromise
@@ -443,6 +661,18 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       poseCurrent = { ...NEUTRAL_POSE };
       poseTarget = { ...NEUTRAL_POSE };
       posePhase = 0;
+      activityState = "idle";
+      activityEvent = null;
+      activityEventRemaining = 0;
+      idleDirectorNext = 5 + Math.random() * 5;
+      lastActivityId = null;
+      idleMotionMix = 0;
+      danceMotionMix = 0;
+      dancePhase = 0;
+      danceExpressionsActive = false;
+      interactionHoverYaw = 0;
+      interactionHoverUntil = 0;
+      interactionCooldownUntil = 0;
       blinkState.next = 2 + Math.random() * 4;
       blinkState.open = true;
       blinkState.double = false;
@@ -494,7 +724,58 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       const delta = Math.min((now - last) / 1000, 0.1);
       last = now;
 
+      if (document.hidden || !stageVisibleRef.current || avatarVisibleRef.current) return;
+
+      const settings = activitySettingsRef.current ?? DEFAULT_ACTIVITY_SETTINGS;
+      const previousState = activityState;
+      let nextState: ActivityState;
+      if (reactionId) nextState = "reacting";
+      else if (generatingRef.current) nextState = "thinking";
+      else if (listeningRef.current) nextState = "listening";
+      else if (
+        settings.musicReactivity &&
+        audioLevelRef.current >= DANCE_AUDIO_THRESHOLD
+      )
+        nextState = "dancing";
+      else nextState = "idle";
+
+      if (nextState !== activityState) {
+        if (activityEvent && nextState !== "idle") endActivityEvent();
+        if (activityState === "dancing" && nextState !== "dancing" && danceExpressionsActive) {
+          clearExpressions();
+          danceExpressionsActive = false;
+        }
+        if (nextState === "dancing" && !danceExpressionsActive && !reactionId) {
+          applyExpressions(DANCE_EXPRESSIONS);
+          danceExpressionsActive = true;
+        }
+        if (nextState === "idle" && previousState !== "idle") {
+          idleDirectorNext = Math.max(idleDirectorNext, 2 + Math.random() * 3);
+        }
+        activityState = nextState;
+      }
+
       if (mixer && idleAction) {
+        if (activityEvent) {
+          activityEventRemaining -= delta;
+          if (activityEventRemaining <= 0 && !reactionId) endActivityEvent();
+        } else if (activityState === "idle" && settings.idleActivity) {
+          idleDirectorNext -= delta;
+          if (idleDirectorNext <= 0) {
+            beginActivityEvent(pickIdleActivity(lastActivityId));
+          }
+        }
+
+        if (!reactionId && !activityEvent) {
+          const targetPose =
+            activityState === "thinking"
+              ? THINKING_POSE
+              : activityState === "listening"
+                ? LISTENING_POSE
+                : NEUTRAL_POSE;
+          poseTarget = { ...targetPose };
+        }
+
         const weightEase = 1 - Math.exp(-delta / 0.3);
         for (const [action, state] of actionWeights) {
           state.value += (state.target - state.value) * weightEase;
@@ -510,8 +791,9 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
             reactionGazeYaw = 0;
             reactionGazePitch = 0;
             poseTarget = { ...NEUTRAL_POSE };
-            for (const state of expressionStates) state.target = 0;
+            clearExpressions();
             playAction(IDLE_ANIMATION_URL);
+            idleDirectorNext = Math.max(idleDirectorNext, 2 + Math.random() * 3);
           }
         }
 
@@ -533,6 +815,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       if (vrm) updateFace(vrm, delta);
       vrm?.update(delta);
       if (vrm && idleAction) {
+        applyProceduralMotion(vrm, delta);
         applyReactionPose(vrm);
         relaxHands(vrm);
       }
@@ -545,6 +828,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       loadModelRef.current = null;
       applyViewRef.current = null;
       reactRef.current = null;
+      interactRef.current = null;
       cancelAnimationFrame(raf);
       mixer?.stopAllAction();
       observer.disconnect();
@@ -620,7 +904,12 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     .join(" ");
 
   return (
-    <div className={stageClass} style={style}>
+    <div
+      className={stageClass}
+      style={style}
+      onPointerEnter={() => interactRef.current?.("hover")}
+      onPointerLeave={() => interactRef.current?.("leave")}
+    >
       <div
         className={`model-stage absolute inset-0 ${
           blurred ? "model-stage-blur" : revealing ? "model-stage-reveal" : ""
@@ -641,6 +930,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
           <div
             onPointerDown={(event) => {
               event.preventDefault();
+              interactRef.current?.("tap");
               try {
                 void getCurrentWindow().startDragging().catch(() => {});
               } catch {

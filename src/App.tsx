@@ -35,6 +35,7 @@ import {
   DEFAULT_SETTINGS,
   appendChatMessage,
   captureScreen,
+  characterActivitySettings,
   characterModelIds,
   dataUrlBytes,
   emptyCharacterBackgrounds,
@@ -274,6 +275,7 @@ function MainApp() {
   const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_SETTINGS.viewMode);
   const [localVision, setLocalVision] = useState(DEFAULT_SETTINGS.localVision);
   const [apiVision, setApiVision] = useState(DEFAULT_SETTINGS.apiVision);
+  const [manualMusic, setManualMusic] = useState(DEFAULT_SETTINGS.manualMusic ?? false);
   const [chatImageUrls, setChatImageUrls] = useState<Record<string, string>>({});
   const chatImageFailedRef = useRef<Set<string>>(new Set());
   const [resizing, setResizing] = useState(false);
@@ -927,6 +929,7 @@ function MainApp() {
         setViewMode(nextViewMode);
         setLocalVision(nextSettings.localVision ?? false);
         setApiVision(nextSettings.apiVision ?? false);
+        setManualMusic(nextSettings.manualMusic ?? false);
 
         customModelsRef.current = vrmList;
         charactersRef.current = nextCharacters;
@@ -2560,6 +2563,11 @@ function MainApp() {
     />
   );
 
+  const activityAudioLevel = manualMusic ? 0.75 : 0;
+  const stageListening = micPhase === "listening";
+  const primaryActivitySettings = characterActivitySettings(activeCharacter);
+  const partnerActivitySettings = characterActivitySettings(groupPartner);
+
   const renderPrimaryStage = (immersiveMode: boolean) => (
     <VrmStage
       ref={primaryStageRef}
@@ -2576,6 +2584,10 @@ function MainApp() {
       avatarName={avatarName}
       avatarVisible={avatarVisible}
       offline={!llmLoaded}
+      generating={generating}
+      listening={stageListening}
+      audioLevel={activityAudioLevel}
+      activitySettings={primaryActivitySettings}
       micStatus={micStatusNode}
       showResetButton={editView}
       onResetView={() => persistView(DEFAULT_VIEW_TRANSFORM)}
@@ -2604,6 +2616,10 @@ function MainApp() {
       avatarName={partnerAvatarName}
       avatarVisible={avatarVisible}
       offline={!llmLoaded}
+      generating={generating}
+      listening={stageListening}
+      audioLevel={activityAudioLevel}
+      activitySettings={partnerActivitySettings}
       micStatus={micStatusNode}
       showResetButton={partnerEditView}
       onResetView={() => persistPartnerView(DEFAULT_VIEW_TRANSFORM)}

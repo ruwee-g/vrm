@@ -334,6 +334,15 @@ impl Default for PersonaSettings {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
+enum IdleIntensity {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -358,6 +367,8 @@ struct AppSettings {
     navbar_visibility: NavbarVisibility,
     #[serde(default)]
     view_mode: ViewMode,
+    #[serde(default)]
+    manual_music: bool,
     #[serde(default)]
     launch_at_login: bool,
     #[serde(default)]
@@ -415,6 +426,7 @@ impl Default for AppSettings {
             chat_appearance: ChatAppearance::default(),
             navbar_visibility: NavbarVisibility::default(),
             view_mode: ViewMode::default(),
+            manual_music: false,
             launch_at_login: false,
             start_with_chat: false,
             start_with_model: false,
@@ -551,6 +563,14 @@ struct Character {
     avatar: Option<String>,
     #[serde(default = "default_true")]
     real_time: bool,
+    #[serde(default = "default_true")]
+    idle_activity: bool,
+    #[serde(default)]
+    idle_intensity: IdleIntensity,
+    #[serde(default = "default_true")]
+    music_reactivity: bool,
+    #[serde(default = "default_true")]
+    interaction_responses: bool,
 }
 
 impl Default for Character {
@@ -565,6 +585,10 @@ impl Default for Character {
             model_ids: Vec::new(),
             avatar: None,
             real_time: true,
+            idle_activity: true,
+            idle_intensity: IdleIntensity::Medium,
+            music_reactivity: true,
+            interaction_responses: true,
         }
     }
 }
@@ -589,6 +613,14 @@ struct StoredCharacter {
     avatar_file: Option<String>,
     #[serde(default = "default_true")]
     real_time: bool,
+    #[serde(default = "default_true")]
+    idle_activity: bool,
+    #[serde(default)]
+    idle_intensity: IdleIntensity,
+    #[serde(default = "default_true")]
+    music_reactivity: bool,
+    #[serde(default = "default_true")]
+    interaction_responses: bool,
 }
 
 impl From<&Character> for StoredCharacter {
@@ -604,6 +636,10 @@ impl From<&Character> for StoredCharacter {
             avatar: character.avatar.clone(),
             avatar_file: None,
             real_time: character.real_time,
+            idle_activity: character.idle_activity,
+            idle_intensity: character.idle_intensity,
+            music_reactivity: character.music_reactivity,
+            interaction_responses: character.interaction_responses,
         }
     }
 }
@@ -624,6 +660,14 @@ struct PrereleaseCharacterSeed {
     avatar_file: String,
     #[serde(default = "default_true")]
     real_time: bool,
+    #[serde(default = "default_true")]
+    idle_activity: bool,
+    #[serde(default)]
+    idle_intensity: IdleIntensity,
+    #[serde(default = "default_true")]
+    music_reactivity: bool,
+    #[serde(default = "default_true")]
+    interaction_responses: bool,
 }
 
 fn normalize_character_models(characters: &mut [StoredCharacter]) {
@@ -1206,6 +1250,10 @@ fn seed_prerelease_characters(app: &AppHandle) -> Result<Vec<StoredCharacter>, S
         avatar: None,
         avatar_file: Some(avatar_file),
         real_time: seed.real_time,
+        idle_activity: seed.idle_activity,
+        idle_intensity: seed.idle_intensity,
+        music_reactivity: seed.music_reactivity,
+        interaction_responses: seed.interaction_responses,
     }];
     normalize_character_models(&mut characters);
     Ok(characters)
@@ -1467,6 +1515,10 @@ fn read_characters(app: AppHandle) -> Result<Vec<Character>, String> {
             model_ids: item.model_ids.clone(),
             avatar,
             real_time: item.real_time,
+            idle_activity: item.idle_activity,
+            idle_intensity: item.idle_intensity,
+            music_reactivity: item.music_reactivity,
+            interaction_responses: item.interaction_responses,
         })
         .collect())
 }

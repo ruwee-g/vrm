@@ -80,6 +80,7 @@ import {
   type GroupChatInfo,
   type GroupResponseLength,
   type GroupSettings,
+  type IdleIntensity,
   type KvCache,
   type ModelMode,
   type ModelStatus,
@@ -998,6 +999,10 @@ export default function Settings() {
       modelIds: [],
       avatar: null,
       realTime: true,
+      idleActivity: true,
+      idleIntensity: "medium",
+      musicReactivity: true,
+      interactionResponses: true,
     };
     const next = [...characters, character];
     setCharacters(next);
@@ -1695,6 +1700,15 @@ export default function Settings() {
                 и скрывается через 15 секунд. Скрыть — открывается кнопкой «три точки»,
                 скрывается через 35 секунд или при уходе курсора.
               </p>
+
+              <div className="mt-4 border-t border-neutral-200 pt-3">
+                <ToggleRow
+                  label="Ручной режим музыки"
+                  description="Включает танцевальное состояние для живой модели. Пока системный звук macOS не подключён, этот переключатель служит источником audioLevel."
+                  checked={settings.manualMusic ?? false}
+                  onChange={(value) => void updateSettings({ manualMusic: value })}
+                />
+              </div>
             </div>
 
             <div className="mt-3 rounded-[16px] border border-neutral-200 bg-white/70 p-3.5">
@@ -2495,6 +2509,66 @@ export default function Settings() {
                   <p className="mt-0.5 text-[10px] leading-[14px] text-neutral-500">
                     Добавляет в промпт текущее время и время суток.
                   </p>
+
+                  <div className="mt-3 border-t border-neutral-200 pt-3">
+                    <h3 className="mb-2 text-[11px] font-semibold text-neutral-700">
+                      Живая модель
+                    </h3>
+                    <label className="flex items-center gap-2 text-[11px] text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={selected.idleActivity ?? true}
+                        onChange={(event) =>
+                          updateCharacter({ idleActivity: event.target.checked })
+                        }
+                        className="h-3.5 w-3.5 shrink-0 accent-neutral-800"
+                      />
+                      Автономная активность в простое
+                    </label>
+                    <p className="mt-0.5 text-[10px] leading-[14px] text-neutral-500">
+                      Дыхание, покачивание, случайный взгляд и короткие действия без чата.
+                    </p>
+
+                    <label className="mb-1 mt-2.5 block text-[10px] text-neutral-500">
+                      Интенсивность
+                    </label>
+                    <Segmented
+                      values={["low", "medium", "high"] as IdleIntensity[]}
+                      value={selected.idleIntensity ?? "medium"}
+                      onChange={(next) => updateCharacter({ idleIntensity: next })}
+                      labels={{ low: "Тихо", medium: "Средне", high: "Активно" }}
+                    />
+
+                    <label className="mt-3 flex items-center gap-2 text-[11px] text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={selected.musicReactivity ?? true}
+                        onChange={(event) =>
+                          updateCharacter({ musicReactivity: event.target.checked })
+                        }
+                        className="h-3.5 w-3.5 shrink-0 accent-neutral-800"
+                      />
+                      Танцевать под музыку
+                    </label>
+                    <p className="mt-0.5 text-[10px] leading-[14px] text-neutral-500">
+                      Использует ручной режим музыки из раздела «Общее» или будущий системный audioLevel.
+                    </p>
+
+                    <label className="mt-2.5 flex items-center gap-2 text-[11px] text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={selected.interactionResponses ?? true}
+                        onChange={(event) =>
+                          updateCharacter({ interactionResponses: event.target.checked })
+                        }
+                        className="h-3.5 w-3.5 shrink-0 accent-neutral-800"
+                      />
+                      Реагировать на курсор и клики
+                    </label>
+                    <p className="mt-0.5 text-[10px] leading-[14px] text-neutral-500">
+                      Взгляд при наведении и короткая реакция при клике по модели.
+                    </p>
+                  </div>
 
                   <label className="mb-1 mt-3 block text-[11px] text-neutral-500">
                     Системный промпт

@@ -15,6 +15,8 @@ export type SpeechQuant = "q4_k" | "q8_0" | "f16";
 export type GroupResponseLength = "short" | "normal" | "detailed";
 export type ChatAppearance = "default" | "glass" | "bubbles";
 export type NavbarVisibility = "always" | "hover" | "hidden";
+
+export type IdleIntensity = "low" | "medium" | "high";
 export type ViewMode = "default" | "overlay" | "fullscreen";
 
 export type GroupSettings = {
@@ -56,6 +58,7 @@ export type AppSettings = {
   chatAppearance: ChatAppearance;
   navbarVisibility: NavbarVisibility;
   viewMode: ViewMode;
+  manualMusic?: boolean;
   launchAtLogin: boolean;
   startWithChat: boolean;
   startWithModel: boolean;
@@ -85,7 +88,27 @@ export type Character = {
   modelIds?: string[];
   avatar?: string | null;
   realTime: boolean;
+  idleActivity?: boolean;
+  idleIntensity?: IdleIntensity;
+  musicReactivity?: boolean;
+  interactionResponses?: boolean;
 };
+
+export type CharacterActivitySettings = {
+  idleActivity: boolean;
+  idleIntensity: IdleIntensity;
+  musicReactivity: boolean;
+  interactionResponses: boolean;
+};
+
+export const characterActivitySettings = (
+  character?: Character | null,
+): CharacterActivitySettings => ({
+  idleActivity: character?.idleActivity ?? true,
+  idleIntensity: character?.idleIntensity ?? "medium",
+  musicReactivity: character?.musicReactivity ?? true,
+  interactionResponses: character?.interactionResponses ?? true,
+});
 
 export type ChatMessage = {
   id: string;
@@ -253,6 +276,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatAppearance: "default",
   navbarVisibility: "always",
   viewMode: "default",
+  manualMusic: false,
   launchAtLogin: false,
   startWithChat: false,
   startWithModel: false,
