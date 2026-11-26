@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>VRM использует запись системного звука, чтобы определить музыку и заставить персонажа танцевать. Видео не записывается и не сохраняется.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VRM использует микрофон, чтобы превращать вашу речь в сообщения для персонажа.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

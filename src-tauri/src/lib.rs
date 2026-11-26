@@ -1,4 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod system_audio;
+
 use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -366,9 +368,15 @@ struct AppSettings {
     #[serde(default)]
     navbar_visibility: NavbarVisibility,
     #[serde(default)]
+    hidden_navbar_buttons: Vec<String>,
+    #[serde(default)]
     view_mode: ViewMode,
+    #[serde(default = "default_theme")]
+    theme: String,
     #[serde(default)]
     manual_music: bool,
+    #[serde(default)]
+    system_audio_dance: bool,
     #[serde(default)]
     launch_at_login: bool,
     #[serde(default)]
@@ -411,6 +419,10 @@ fn default_chat_width() -> u16 {
     DEFAULT_CHAT_WIDTH
 }
 
+fn default_theme() -> String {
+    "light".to_string()
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -425,8 +437,11 @@ impl Default for AppSettings {
             chat_width: DEFAULT_CHAT_WIDTH,
             chat_appearance: ChatAppearance::default(),
             navbar_visibility: NavbarVisibility::default(),
+            hidden_navbar_buttons: Vec::new(),
             view_mode: ViewMode::default(),
+            theme: default_theme(),
             manual_music: false,
+            system_audio_dance: false,
             launch_at_login: false,
             start_with_chat: false,
             start_with_model: false,
@@ -1424,6 +1439,18 @@ fn write_layout_settings(
     settings.window_height = window_height.clamp(MIN_WINDOW_HEIGHT, DEFAULT_WINDOW_HEIGHT);
     settings.chat_width = chat_width.clamp(DEFAULT_CHAT_WIDTH, MAX_CHAT_WIDTH);
     write_json(&app, SETTINGS_FILE, &settings)
+}
+
+#[tauri::command]
+fn write_theme(app: AppHandle, theme: String) -> Result<(), String> {
+    if theme != "light" && theme != "dark" {
+        return Err("Недопустимая тема".to_string());
+    }
+    let mut settings = read_json::<AppSettings>(&app, SETTINGS_FILE, AppSettings::default())?;
+    settings.theme = theme.clone();
+    write_json(&app, SETTINGS_FILE, &settings)?;
+    let _ = app.emit("theme-changed", theme);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2839,6 +2866,7 @@ pub fn run() {
             api_chat_completion,
             api_list_models,
             write_layout_settings,
+            write_theme,
             open_data_dir,
             set_active_character,
             read_characters,
@@ -2874,6 +2902,9 @@ pub fn run() {
             stt_stop,
             transcribe_audio,
             speech_debug,
+            system_audio::start_system_audio,
+            system_audio::stop_system_audio,
+            system_audio::system_audio_status,
             list_vrm_models,
             save_vrm_model,
             read_vrm_model,
@@ -2885,6 +2916,7 @@ pub fn run() {
         ])
         .manage(Mutex::new(ModelProcess::default()))
         .manage(Mutex::new(SttProcess::default()))
+        .manage(system_audio::SystemAudioState::default())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
@@ -2893,6 +2925,10 @@ pub fn run() {
                 kill_model_child(&app, state.inner()).ok();
                 let stt_state = app.state::<Mutex<SttProcess>>();
                 kill_stt_child(&app, stt_state.inner()).ok();
+                let audio = app.state::<system_audio::SystemAudioState>();
+                if let Some(stream) = audio.stream.lock().ok().and_then(|mut s| s.take()) {
+                    stream.stop_capture().ok();
+                }
             }
         });
 }

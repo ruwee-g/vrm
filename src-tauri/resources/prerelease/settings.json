@@ -6,6 +6,7 @@
   "chatAppearance": "default",
   "navbarVisibility": "always",
   "viewMode": "default",
+  "theme": "light",
   "manualMusic": false,
   "launchAtLogin": false,
   "startWithChat": false,

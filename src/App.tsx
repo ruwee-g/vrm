@@ -15,6 +15,15 @@ import {
   requestGroupChatSummary,
 } from "./llm";
 import { LocalMicRecorder, type LocalCaptureStats } from "./localSpeech";
+import { MusicDetector } from "./audioMusicDetector";
+import { onSystemAudioChunk, startSystemAudio, stopSystemAudio } from "./systemAudio";
+import { applyTheme, isTheme, listenThemeChanges } from "./theme";
+import {
+  NAVBAR_BUTTONS,
+  isNavbarButtonVisible,
+  normalizeHiddenNavbarButtons,
+  type NavbarButtonId,
+} from "./navbarButtons";
 import {
   collectFinalText,
   describeSpeechError,
@@ -83,20 +92,25 @@ import {
 type CustomBackground = { id: string; dataUrl: string };
 type MicPhase = "off" | "starting" | "listening" | "error";
 
-const BUTTONS = [
-  { id: "chat", icon: "/icons/nav/chat.svg?v=3", label: "Чат" },
-  { id: "group", icon: "/icons/nav/group.svg?v=1", label: "Беседа" },
-  { id: "screen", icon: "/icons/nav/screen.svg?v=1", label: "Поделиться экраном" },
-  { id: "bg", icon: "/icons/nav/bg.svg?v=3", label: "Фон" },
-  { id: "reactions", icon: "/icons/nav/reactions.svg?v=1", label: "Эмоции" },
-  { id: "mic", icon: "/icons/nav/mic.svg?v=3", label: "Микрофон" },
-  { id: "view", icon: "/icons/nav/view.svg?v=3", label: "Редактировать вид" },
-  { id: "display", icon: "/icons/nav/view-mode.svg?v=1", label: "Режим отображения" },
-  { id: "user", icon: "/icons/nav/user.svg?v=3", label: "Персонажи" },
-  { id: "outfit", icon: "/icons/nav/arrows.svg?v=1", label: "Одежда" },
-  { id: "settings", icon: "/icons/nav/settings.svg?v=3", label: "Настройки" },
-  { id: "power", icon: "/icons/nav/power.svg?v=1", label: "Питание модели" },
-];
+const BUTTON_ICONS: Record<NavbarButtonId, string> = {
+  chat: "/icons/nav/chat.svg?v=3",
+  group: "/icons/nav/group.svg?v=1",
+  screen: "/icons/nav/screen.svg?v=1",
+  bg: "/icons/nav/bg.svg?v=3",
+  reactions: "/icons/nav/reactions.svg?v=1",
+  mic: "/icons/nav/mic.svg?v=3",
+  view: "/icons/nav/view.svg?v=3",
+  display: "/icons/nav/view-mode.svg?v=1",
+  user: "/icons/nav/user.svg?v=3",
+  outfit: "/icons/nav/arrows.svg?v=1",
+  settings: "/icons/nav/settings.svg?v=3",
+  power: "/icons/nav/power.svg?v=1",
+};
+
+const BUTTONS = NAVBAR_BUTTONS.map((button) => ({
+  ...button,
+  icon: BUTTON_ICONS[button.id],
+}));
 
 const VIEW_MODE_OPTIONS: { id: ViewMode; icon: string; label: string }[] = [
   { id: "default", icon: "/icons/nav/view-mode-default.svg?v=1", label: "Обычный" },
@@ -121,8 +135,8 @@ const SUMMARY_NEW_MESSAGES = 24;
 const SUMMARY_SOURCE_MAX = 60;
 const CROP_W = 243;
 const CROP_H = 432;
-const NAV_A_IDS = ["screen", "bg", "outfit", "view", "display"];
-const NAV_B_IDS = [
+const NAV_A_IDS: NavbarButtonId[] = ["screen", "bg", "outfit", "view", "display"];
+const NAV_B_IDS: NavbarButtonId[] = [
   "chat",
   "group",
   "bg",
@@ -140,6 +154,7 @@ const groupKeyFor = (primaryId: string, partnerId: string) =>
   `group:${[primaryId, partnerId].sort().join(":")}`;
 
 const isSettingsWindow = (() => {
+  if (new URLSearchParams(window.location.search).get("window") === "settings") return true;
   try {
     return getCurrentWindow().label === "settings";
   } catch {
@@ -271,11 +286,14 @@ function MainApp() {
   const [chatWidth, setChatWidth] = useState(DEFAULT_SETTINGS.chatWidth);
   const [chatAppearance, setChatAppearance] = useState(DEFAULT_SETTINGS.chatAppearance);
   const [navbarVisibility, setNavbarVisibility] = useState(DEFAULT_SETTINGS.navbarVisibility);
+  const [hiddenNavbarButtons, setHiddenNavbarButtons] = useState<NavbarButtonId[]>([]);
   const [navbarTemporarilyShown, setNavbarTemporarilyShown] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_SETTINGS.viewMode);
   const [localVision, setLocalVision] = useState(DEFAULT_SETTINGS.localVision);
   const [apiVision, setApiVision] = useState(DEFAULT_SETTINGS.apiVision);
   const [manualMusic, setManualMusic] = useState(DEFAULT_SETTINGS.manualMusic ?? false);
+  const [detectedMusicLevel, setDetectedMusicLevel] = useState(0);
+  const detectorRef = useRef<MusicDetector | null>(null);
   const [chatImageUrls, setChatImageUrls] = useState<Record<string, string>>({});
   const chatImageFailedRef = useRef<Set<string>>(new Set());
   const [resizing, setResizing] = useState(false);
@@ -883,6 +901,47 @@ function MainApp() {
   };
 
   useEffect(() => {
+    const detector = new MusicDetector();
+    detectorRef.current = detector;
+    let unsubscribe: (() => void) | null = null;
+    let lastChunkAt = 0;
+    let lastPublished = 0;
+    let disposed = false;
+
+    void onSystemAudioChunk((samples) => {
+      lastChunkAt = performance.now();
+      detector.push(samples);
+      const now = performance.now();
+      if (now - lastPublished < 400) return;
+      lastPublished = now;
+      const level = detector.level;
+      setDetectedMusicLevel((previous) =>
+        Math.abs(previous - level) > 0.01 ? level : previous,
+      );
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unsubscribe = stop;
+      })
+      .catch((error) => console.error("Не удалось подписаться на системный звук", error));
+
+    const watchdog = window.setInterval(() => {
+      if (lastChunkAt === 0) return;
+      if (performance.now() - lastChunkAt > 1500 && detector.isMusic) {
+        detector.reset();
+        setDetectedMusicLevel(0);
+      }
+    }, 1000);
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      window.clearInterval(watchdog);
+      detectorRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const refresh = async () => {
       try {
         const [nextSettings, nextCharacters, vrmList, nextModelState] = await Promise.all([
@@ -923,13 +982,26 @@ function MainApp() {
         setWindowHeight(nextHeight);
         setChatWidth(nextChatWidth);
         setChatAppearance(nextSettings.chatAppearance ?? "default");
+        applyTheme(isTheme(nextSettings.theme) ? nextSettings.theme : "light");
         setNavbarVisibility(nextSettings.navbarVisibility ?? "always");
+        setHiddenNavbarButtons(
+          normalizeHiddenNavbarButtons(nextSettings.hiddenNavbarButtons),
+        );
         const nextViewMode = nextSettings.viewMode ?? "default";
         viewModeRef.current = nextViewMode;
         setViewMode(nextViewMode);
         setLocalVision(nextSettings.localVision ?? false);
         setApiVision(nextSettings.apiVision ?? false);
         setManualMusic(nextSettings.manualMusic ?? false);
+        if (nextSettings.systemAudioDance) {
+          void startSystemAudio().catch((error) =>
+            console.error("Не удалось включить системный звук", error),
+          );
+        } else {
+          void stopSystemAudio().catch((error) =>
+            console.error("Не удалось выключить системный звук", error),
+          );
+        }
 
         customModelsRef.current = vrmList;
         charactersRef.current = nextCharacters;
@@ -1045,6 +1117,21 @@ function MainApp() {
     const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listenThemeChanges((theme) => {
+      settingsRef.current = { ...settingsRef.current, theme };
+    }).then((fn) => {
+      if (active) unlisten = fn;
+      else fn();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, []);
 
   const changeViewMode = (mode: ViewMode) => {
@@ -1227,6 +1314,12 @@ function MainApp() {
     partnerModelId === DEFAULT_MODEL_ID || customModelsRef.current.includes(partnerModelId)
       ? partnerModelId
       : DEFAULT_MODEL_ID;
+  const visibleButtons = BUTTONS.filter((button) =>
+    isNavbarButtonVisible(button.id, hiddenNavbarButtons),
+  );
+  const visibleButtonIds = visibleButtons.map((button) => button.id);
+  const visibleNavAIds = NAV_A_IDS.filter((id) => visibleButtonIds.includes(id));
+  const visibleNavBIds = NAV_B_IDS.filter((id) => visibleButtonIds.includes(id));
   const navCompact = (count: number) =>
     windowHeight * 0.88 < count * NAV_BUTTON_SIZE + (count - 1) * NAV_GAP;
   const navWidthFor = (count: number) =>
@@ -2151,16 +2244,19 @@ function MainApp() {
     );
   };
 
-  const renderNavbar = (ids: string[], compact: boolean, side: "A" | "B", order?: number) => (
-    <div
-      className={`${compact ? "grid grid-cols-2 auto-rows-min gap-2" : "flex flex-col gap-2"} shrink-0 self-start ${groupActive && side === "A" ? "mr-3" : ""}`}
-      style={order === undefined ? undefined : { order }}
-    >
-      {BUTTONS.filter((item) => ids.includes(item.id)).map((item) =>
-        renderNavButton(item, side),
-      )}
-    </div>
-  );
+  const renderNavbar = (ids: string[], compact: boolean, side: "A" | "B", order?: number) => {
+    if (ids.length === 0) return null;
+    return (
+      <div
+        className={`${compact ? "grid grid-cols-2 auto-rows-min gap-2" : "flex flex-col gap-2"} shrink-0 self-start ${groupActive && side === "A" ? "mr-3" : ""}`}
+        style={order === undefined ? undefined : { order }}
+      >
+        {BUTTONS.filter((item) => ids.includes(item.id)).map((item) =>
+          renderNavButton(item, side),
+        )}
+      </div>
+    );
+  };
 
   const renderBackgroundPanel = (
     target: "primary" | "partner",
@@ -2563,7 +2659,7 @@ function MainApp() {
     />
   );
 
-  const activityAudioLevel = manualMusic ? 0.75 : 0;
+  const activityAudioLevel = manualMusic ? 0.75 : detectedMusicLevel;
   const stageListening = micPhase === "listening";
   const primaryActivitySettings = characterActivitySettings(activeCharacter);
   const partnerActivitySettings = characterActivitySettings(groupPartner);
@@ -2636,7 +2732,7 @@ function MainApp() {
       width: chatOpen ? chatWidth : 0,
       right:
         fullscreenChat && !groupActive
-          ? 12 + navWidthFor(BUTTONS.length) + 8
+          ? 12 + navWidthFor(visibleButtons.length) + 8
           : undefined,
       order: !immersiveMode && groupActive ? 0 : undefined,
     };
@@ -2806,8 +2902,8 @@ function MainApp() {
         {immersive && (groupActive || isFullscreen) && navbarVisible && (
           <div className="absolute top-3 z-30" style={{ right: 12, ...fullscreenNavbarOffset }}>
             {renderNavbar(
-              groupActive ? NAV_A_IDS : BUTTONS.map((item) => item.id),
-              navCompact(groupActive ? NAV_A_IDS.length : BUTTONS.length),
+              groupActive ? visibleNavAIds : visibleButtonIds,
+              navCompact(groupActive ? visibleNavAIds.length : visibleButtons.length),
               "A",
             )}
           </div>
@@ -2818,8 +2914,8 @@ function MainApp() {
 
       {immersive && !isFullscreen && !groupActive && navbarVisible &&
         renderNavbar(
-          BUTTONS.map((item) => item.id),
-          navCompact(BUTTONS.length),
+          visibleButtonIds,
+          navCompact(visibleButtons.length),
           "A",
         )}
 
@@ -2831,7 +2927,7 @@ function MainApp() {
           {renderPartnerStage(immersive)}
           {immersive && navbarVisible && (
             <div className="absolute top-3 z-30" style={{ right: 12, ...fullscreenNavbarOffset }}>
-              {renderNavbar(NAV_B_IDS, navCompact(NAV_B_IDS.length), "B")}
+              {renderNavbar(visibleNavBIds, navCompact(visibleNavBIds.length), "B")}
             </div>
           )}
         </div>
@@ -2849,13 +2945,13 @@ function MainApp() {
         {groupActive &&
           navbarVisible &&
           !immersive &&
-          renderNavbar(NAV_A_IDS, navCompact(NAV_A_IDS.length), "A", -2)}
+          renderNavbar(visibleNavAIds, navCompact(visibleNavAIds.length), "A", -2)}
         {!groupActive &&
           navbarVisible &&
           !immersive &&
           renderNavbar(
-            BUTTONS.map((item) => item.id),
-            navCompact(BUTTONS.length),
+            visibleButtonIds,
+            navCompact(visibleButtons.length),
             "A",
           )}
         {!groupActive &&

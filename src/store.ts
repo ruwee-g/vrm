@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { IS_PRERELEASE } from "./channel";
+import type { NavbarButtonId } from "./navbarButtons";
 
 export type KvCache = "f16" | "q8_0";
 export type Reasoning = "off" | "low" | "medium" | "high";
@@ -15,6 +16,7 @@ export type SpeechQuant = "q4_k" | "q8_0" | "f16";
 export type GroupResponseLength = "short" | "normal" | "detailed";
 export type ChatAppearance = "default" | "glass" | "bubbles";
 export type NavbarVisibility = "always" | "hover" | "hidden";
+export type Theme = "light" | "dark";
 
 export type IdleIntensity = "low" | "medium" | "high";
 export type ViewMode = "default" | "overlay" | "fullscreen";
@@ -57,8 +59,11 @@ export type AppSettings = {
   chatWidth: number;
   chatAppearance: ChatAppearance;
   navbarVisibility: NavbarVisibility;
+  hiddenNavbarButtons?: NavbarButtonId[];
   viewMode: ViewMode;
+  theme: Theme;
   manualMusic?: boolean;
+  systemAudioDance?: boolean;
   launchAtLogin: boolean;
   startWithChat: boolean;
   startWithModel: boolean;
@@ -275,8 +280,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatWidth: 324,
   chatAppearance: "default",
   navbarVisibility: "always",
+  hiddenNavbarButtons: [],
   viewMode: "default",
+  theme: "light",
   manualMusic: false,
+  systemAudioDance: false,
   launchAtLogin: false,
   startWithChat: false,
   startWithModel: false,

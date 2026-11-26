@@ -29,6 +29,7 @@ sha2 = "0.10"
 base64 = "0.22"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
+screencapturekit = { version = "12", features = ["macos_13_0"] }
 
 [features]
 prerelease = []
