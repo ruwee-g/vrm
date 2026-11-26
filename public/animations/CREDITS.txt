@@ -1,0 +1,28 @@
+Animation assets
+================
+
+idle_loop.vrma
+  Source: github.com/pixiv/ChatVRM (public/idle_loop.vrma)
+  License: MIT (see LICENSE_ChatVRM.txt)
+  Used as the default looping idle motion.
+
+LookAround.vrma, Relax.vrma
+  Source: github.com/tk256ailab/vrm-viewer (VRMA/*.vrma)
+  License: MIT (see LICENSE_vrm-viewer.txt)
+  Used as occasional idle variations.
+
+VRMA_01.vrma - VRMA_07.vrma
+  Source: VRoid Project / pixiv Inc., free motion pack distributed on BOOTH
+  (https://vroid.booth.pm/items/5512385). Copies taken from
+  github.com/ARPAHLS/avatar (avatar/src/assets/avatars/VRMA/).
+  Full terms: Readme_VRMA_MotionPack_EN.txt.
+  VRMA_01.vrma - VRMA_07.vrma are bundled as reaction animations; the mapping
+  is defined in src/reactions.ts.
+
+Required credit for the VRoid Project motion pack:
+
+    Character animation credits to pixiv Inc.'s VRoid Project
+    キャラクターアニメーション: ピクシブ株式会社 VRoidプロジェクト
+
+Runtime animation playback is provided by @pixiv/three-vrm-animation (MIT).
+Blink and gaze behavior is adapted from pixiv/ChatVRM (MIT) autoBlink.ts.

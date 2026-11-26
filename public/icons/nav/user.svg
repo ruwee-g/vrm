@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="26px" height="25px" viewBox="0 0 26 25" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>model</title>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="model" transform="translate(1, 1)">
+            <path d="M12,16 C16.418,16 20,12.4183 20,8 C20,3.58172 16.418,0 12,0 C7.582,0 4,3.58172 4,8 C4,12.4183 7.582,16 12,16 Z" id="Path-4" fill="#343330" opacity="0.2"></path>
+            <path d="M12,16 C16.418,16 20,12.4183 20,8 C20,3.58172 16.418,0 12,0 C7.582,0 4,3.58172 4,8 C4,12.4183 7.582,16 12,16 Z" id="Path-3" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M0,23 C2.421,18.8162 6.819,16 12,16 C17.181,16 21.579,18.8162 24,23" id="Path-2" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        </g>
+    </g>
+</svg>

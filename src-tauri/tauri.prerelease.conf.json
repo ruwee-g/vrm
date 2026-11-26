@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VRM Pre-Release",
+  "version": "0.1.0-pre.3",
+  "identifier": "com.ruwee.vrmapp.prerelease",
+  "build": {
+    "beforeDevCommand": "npm run dev:pre",
+    "devUrl": "http://localhost:1421",
+    "beforeBuildCommand": "npm run build:pre",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VRM Pre-Release",
+        "width": 470,
+        "height": 680,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNDMjBCQUE5MjgyQUIxMTQKUldRVXNTb29xYm9nUEJIbEp3aVU5cFNLUzlIUWhibWtDeC8xK2JTZWJzQ0g4TUZuTldkOXhFdHUK",
+      "endpoints": [
+        "https://github.com/ruwee-g/vrm/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "resources": [
+      "resources/crispasr-macos-arm64/crispasr",
+      "resources/crispasr-macos-arm64/libc2pa_c.dylib",
+      "resources/crispasr-macos-arm64/LICENSE",
+      "resources/crispasr-macos-arm64/THIRD_PARTY_NOTICES.txt",
+      "resources/prerelease/avatar.jpg",
+      "resources/prerelease/default-character.json",
+      "resources/prerelease/settings.json",
+      "resources/prerelease/Haruhi_Bunny.vrm",
+      "resources/prerelease/Haruhi_school.vrm",
+      "resources/prerelease/Haruhi_sport.vrm",
+      "resources/prerelease/Haruhi_swimsuit.vrm",
+      "resources/prerelease/Haruhi_winter.vrm"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

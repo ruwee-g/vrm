@@ -1,0 +1,47 @@
+{
+  "ggufPath": "",
+  "contextSize": 8192,
+  "runnerPath": "",
+  "port": 8081,
+  "chatAppearance": "default",
+  "navbarVisibility": "always",
+  "launchAtLogin": false,
+  "startWithChat": false,
+  "startWithModel": false,
+  "startLocalModel": false,
+  "localVision": false,
+  "apiVision": false,
+  "mmprojPath": "",
+  "kvCache": "f16",
+  "reasoning": "off",
+  "activeCharacterId": "default",
+  "modelMode": "local",
+  "api": {
+    "baseUrl": "",
+    "apiKey": "",
+    "model": ""
+  },
+  "group": {
+    "rules": "",
+    "responseLength": "normal",
+    "reactions": true,
+    "useExamples": false,
+    "historyDepth": 24,
+    "summaryThreshold": 32
+  },
+  "persona": {
+    "name": "",
+    "description": ""
+  },
+  "speech": {
+    "enabled": true,
+    "language": "en-US",
+    "continuous": true,
+    "autoSend": false,
+    "autoRestart": false,
+    "showStatus": false,
+    "engine": "localParakeet",
+    "localQuant": "q4_k",
+    "sttPort": 8082
+  }
+}

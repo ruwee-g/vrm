@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24px" height="23px" viewBox="0 0 24 23" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>power</title>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="power" transform="translate(1, 0)">
+            <path d="M11,22 C17.075,22 22,17.0751 22,11 C22,4.92487 17.075,0 11,0 C4.925,0 0,4.92487 0,11 C0,17.0751 4.925,22 11,22 Z" id="Path-4" fill="#343330" opacity="0.2"></path>
+            <line x1="11" y1="1" x2="11" y2="11" id="Path-3" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></line>
+            <path d="M17,2 C20.01,3.9625 22,7.1388 22,11 C22,13.9174 20.841,16.7153 18.778,18.7782 C16.715,20.8411 13.917,22 11,22 C8.083,22 5.285,20.8411 3.222,18.7782 C1.159,16.7153 0,13.9174 0,11 C0,7.1388 1.99,3.9625 5,2" id="Path-2" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        </g>
+    </g>
+</svg>

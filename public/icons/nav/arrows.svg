@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="22px" height="22px" viewBox="0 0 22 22" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>arrows</title>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="arrows" transform="translate(1, 1)">
+            <polygon id="Path" fill="#343330" opacity="0.2" points="20 4 0 4 0 16 20 16"></polygon>
+            <polyline id="Path" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 12 20 16 16 20"></polyline>
+            <line x1="0" y1="16" x2="20" y2="16" id="Path" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></line>
+            <polyline id="Path" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="4 8 0 4 4 0"></polyline>
+            <line x1="20" y1="4" x2="0" y2="4" id="Path" stroke="#343330" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></line>
+        </g>
+    </g>
+</svg>
