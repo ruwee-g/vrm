@@ -10,7 +10,6 @@ export const REACTION_IDS = [
   "show",
   "model",
   "spin",
-  "squat",
   "shoot",
   "think",
   "neutral",
@@ -78,7 +77,7 @@ export const REACTIONS: Record<ReactionId, ReactionConfig> = {
     duration: 2.2,
     gazeYaw: 0,
     gazePitch: 1,
-    pose: pose({ chestPitch: 0.07 }),
+    pose: pose({ chestPitch: 0.025 }),
   },
   smug: {
     expressions: ["relaxed"],
@@ -90,16 +89,15 @@ export const REACTIONS: Record<ReactionId, ReactionConfig> = {
   },
   greeting: {
     expressions: ["happy"],
-    expressionWeight: 0.9,
-    animationUrl: "/animations/VRMA_02.vrma",
+    expressionWeight: 0.85,
     duration: 2.7,
     gazeYaw: 0,
-    gazePitch: 0,
+    gazePitch: 2,
     pose: pose({}),
   },
   wave: {
     expressions: ["happy"],
-    expressionWeight: 0.85,
+    expressionWeight: 0.9,
     animationUrl: "/animations/VRMA_02.vrma",
     duration: 2.6,
     gazeYaw: 0,
@@ -142,15 +140,6 @@ export const REACTIONS: Record<ReactionId, ReactionConfig> = {
     gazePitch: 0,
     pose: pose({}),
   },
-  squat: {
-    expressions: ["relaxed"],
-    expressionWeight: 0.45,
-    animationUrl: "/animations/VRMA_07.vrma",
-    duration: 3,
-    gazeYaw: 0,
-    gazePitch: 6,
-    pose: pose({ headPitch: 0.05 }),
-  },
   shoot: {
     expressions: ["relaxed"],
     expressionWeight: 0.55,
@@ -190,7 +179,6 @@ export const REACTION_LABELS: Record<ReactionId, string> = {
   show: "Показывает себя",
   model: "Модельная поза",
   spin: "Крутится",
-  squat: "Приседает",
   shoot: "Выстрел",
   think: "Задумчивость",
   neutral: "Нейтрально",
@@ -218,8 +206,6 @@ const ALIASES: Record<string, ReactionId> = {
   turn: "spin",
   twirl: "spin",
   rotate: "spin",
-  crouch: "squat",
-  sit: "squat",
   finger_gun: "shoot",
   bang: "shoot",
   gun: "shoot",
@@ -236,7 +222,7 @@ export const REACTION_PROMPT_HINT = `В конце каждого ответа �
 Допустимые значения:
 ${REACTION_IDS.map((id) => `${id} — ${REACTION_LABELS[id].toLowerCase()}`).join("\n")}
 
-После тега ничего не пиши. Тег не является частью видимого ответа.`;
+Выбирай тег под тон фразы: радость, удивление, грусть, злость, ухмылка и задумчивость должны получать соответствующий тег. neutral ставь только для спокойных нейтральных реплик. Добавляй тег всегда, даже если он совпадает с предыдущим. После тега ничего не пиши. Тег не является частью видимого ответа.`;
 
 export function normalizeReaction(value: string): ReactionId | null {
   const key = value.trim().toLowerCase();

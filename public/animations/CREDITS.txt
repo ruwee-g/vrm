@@ -11,13 +11,13 @@ LookAround.vrma, Relax.vrma
   License: MIT (see LICENSE_vrm-viewer.txt)
   Used as occasional idle variations.
 
-VRMA_01.vrma - VRMA_07.vrma
+VRMA_01.vrma - VRMA_06.vrma
   Source: VRoid Project / pixiv Inc., free motion pack distributed on BOOTH
   (https://vroid.booth.pm/items/5512385). Copies taken from
   github.com/ARPAHLS/avatar (avatar/src/assets/avatars/VRMA/).
   Full terms: Readme_VRMA_MotionPack_EN.txt.
-  VRMA_01.vrma - VRMA_07.vrma are bundled as reaction animations; the mapping
-  is defined in src/reactions.ts.
+  VRMA_01.vrma - VRMA_06.vrma are bundled as reaction animations; the mapping
+  is defined in src/reactions.ts. The pack's squat motion (VRMA_07) is not used.
 
 dance-simple.glb
   Source: Mesh2Motion, static/assets/human/animations/dance-simple.glb

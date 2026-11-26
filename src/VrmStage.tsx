@@ -55,6 +55,7 @@ import {
   loadEditedDanceClip,
   makeHybridBaselineClip,
 } from "./danceClip";
+import { createReactionGestureClips } from "./gestureClips";
 
 const REACTION_ANIMATION_URLS = Array.from(
   new Set(
@@ -274,6 +275,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
     let mixer: THREE.AnimationMixer | null = null;
     let danceAction: THREE.AnimationAction | null = null;
     let actionsByUrl = new Map<string, THREE.AnimationAction>();
+    let gestureActions = new Map<ReactionId, THREE.AnimationAction>();
     let actionWeights = new Map<
       THREE.AnimationAction,
       { value: number; target: number }
@@ -357,6 +359,16 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       for (const [candidate, state] of actionWeights) {
         state.target = candidate === action ? 1 : 0;
       }
+    };
+
+    const playGesture = (id: ReactionId) => {
+      const action = gestureActions.get(id);
+      if (!action) return false;
+      action.reset().play();
+      for (const [candidate, state] of actionWeights) {
+        state.target = candidate === action ? 1 : 0;
+      }
+      return true;
     };
 
     const applyExpressions = (entries: ActivityExpression[]) => {
@@ -722,7 +734,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       );
 
       if (config.animationUrl) playAction(config.animationUrl);
-      else {
+      else if (!playGesture(appliedId)) {
         releaseAction();
         syncDanceWeight();
       }
@@ -756,8 +768,19 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
 
         mixer = new THREE.AnimationMixer(model.scene);
         actionsByUrl = new Map();
+        gestureActions = new Map();
         actionWeights = new Map();
         danceAction = null;
+
+        for (const [id, clip] of createReactionGestureClips(model)) {
+          const action = mixer.clipAction(clip);
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
+          action.play();
+          action.setEffectiveWeight(0);
+          gestureActions.set(id, action);
+          actionWeights.set(action, { value: 0, target: 0 });
+        }
 
         for (const { url, animation } of items) {
           const clip = createVRMAnimationClip(animation, model);
@@ -837,6 +860,7 @@ const VrmStage = forwardRef<VrmStageHandle, VrmStageProps>(function VrmStage(
       }
       danceAction = null;
       actionsByUrl = new Map();
+      gestureActions = new Map();
       actionWeights = new Map();
       reactionId = null;
       reactionRemaining = 0;
