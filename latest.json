@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-pre.4",
-  "notes": "Режимы отображения, фулскрин с чатом поверх модели и сохранение позиции по режимам",
-  "pub_date": "2026-11-26T08:56:16.513Z",
+  "version": "0.1.0-pre.5",
+  "notes": "Настройки в нативном стиле macOS, светлая и тёмная темы во всём приложении, системный звук/танец и настраиваемые кнопки навбара",
+  "pub_date": "2026-11-27T00:06:03.123Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRVXNTb29xYm9nUENtd3hONGZmcTRJTC9UTUx2YmtCcm9iZktHNk4xY2o2VVMzQmJ2L09tUXYwcUEwdU1BTk12Vm5ObWd6K2krZm56NjVRS2E4MExTSmcvQjlyVkVVQXdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjgzMzU3CWZpbGU6VlJNIFByZS1SZWxlYXNlLmFwcC50YXIuZ3oJdmVyc2lvbjowLjEuMC1wcmUuNApYSHowc3FQMlNMeEJ5M0VGSEcxUGNjazlTNjVsMzNjYnRockdXVGg1RmYzWC8waElDblJNc1JjNTFSQWZscHN2Y2x0cktKNGlFYnk2MHptSWE1SHlBdz09Cg==",
-      "url": "https://github.com/ruwee-g/vrm/releases/download/v0.1.0-pre.4/VRM.Pre-Release.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRVXNTb29xYm9nUFBSL1p0aXBVNTBQQzRsWnlyby9sbm9rMGdXYnYxdU56Tzk3RXFKdkRCaGxiR3hYczQ4QjZ1UXcvclJCYVhlZjZ2cTMxTmM5NEdXR05DYzAvTWZSQWdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzM3OTU1CWZpbGU6VlJNIFByZS1SZWxlYXNlLmFwcC50YXIuZ3oJdmVyc2lvbjowLjEuMC1wcmUuNQpmbnV0N0hFbFQ3TmhkYXZaMlBwc0FHQm9PR1pSRmZFSVkwVDRKSXExT1pPM2g0ZVIzQlhFQVArclhuckQzUXFSZ3o3a0VqcXMyQlVNZDM1bngvWnlBUT09Cg==",
+      "url": "https://github.com/ruwee-g/vrm/releases/download/v0.1.0-pre.5/VRM.Pre-Release.app.tar.gz"
     }
   }
 }
